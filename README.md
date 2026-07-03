@@ -1,6 +1,6 @@
 # Cloud Drive Sync for Obsidian
 
-A personal-use Obsidian plugin that provides two-way sync between your vault and Google Drive. Works on desktop (macOS, Windows, Linux), Android, and iOS/iPadOS.
+A personal-use Obsidian plugin that provides two-way sync between your vault and Google Drive or an S3 bucket. Works on desktop (macOS, Windows, Linux), Android, and iOS/iPadOS.
 
 > **Note:** This plugin was built for personal use. It is not published to the Obsidian community plugin directory. There is no warranty — use at your own risk. See [LICENSE](LICENSE).
 
