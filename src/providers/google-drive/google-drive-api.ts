@@ -1,4 +1,5 @@
 import { requestUrl } from "obsidian";
+import { RemoteNotFoundError } from "../cloud-provider";
 import type { RemoteFileInfo } from "../../types";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
@@ -127,8 +128,12 @@ export class GoogleDriveApi {
 		const resp = await requestUrl({
 			url: `${DRIVE_API}/files/${fileId}?alt=media`,
 			headers: await this.headers(),
+			throw: false,
 		});
 
+		if (resp.status === 404) {
+			throw new RemoteNotFoundError(fileId);
+		}
 		if (resp.status !== 200) {
 			throw new Error(`Drive download failed (${resp.status})`);
 		}

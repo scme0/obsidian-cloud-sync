@@ -1,4 +1,5 @@
 import { App, Notice, Platform, TFile, TFolder } from "obsidian";
+import { RemoteNotFoundError } from "../providers/cloud-provider";
 import type { CloudProvider } from "../providers/cloud-provider";
 import type { SyncStateStore } from "./sync-state";
 import type { PluginSettings, RemoteFileInfo, SyncAction } from "../types";
@@ -189,6 +190,14 @@ export class SyncEngine {
 					await this.executeAction(action, localMap, remoteMap);
 					this.countAction(action, result);
 				} catch (e) {
+					if (e instanceof RemoteNotFoundError) {
+						// Remote file vanished between listing and fetch (deleted or
+						// moved server-side, or a stale listing from the backend).
+						// Skip quietly: the next sync gets a fresh listing and
+						// classifies it correctly (e.g. delete-local).
+						console.info(`Remote gone, skipping ${action.type} ${action.vaultPath}; next sync will reconcile`);
+						continue;
+					}
 					const msg = e instanceof Error ? e.message : String(e);
 					console.error(`Sync error on ${action.type} ${action.vaultPath}:`, e);
 					issues.push({

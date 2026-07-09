@@ -1,4 +1,5 @@
 import { requestUrl } from "obsidian";
+import { RemoteNotFoundError } from "../cloud-provider";
 
 // Node https available on desktop (Electron) but not mobile
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -233,6 +234,9 @@ export class S3Api {
 			new Uint8Array(0), this.cfg.accessKey, this.cfg.secretKey, this.cfg.region,
 		);
 		const resp = await nodeRequest(this.objectUrl(key), "GET", headers);
+		if (resp.status === 404) {
+			throw new RemoteNotFoundError(key);
+		}
 		if (resp.status !== 200) {
 			throw new Error(`S3 get failed (${resp.status}): ${key}`);
 		}
