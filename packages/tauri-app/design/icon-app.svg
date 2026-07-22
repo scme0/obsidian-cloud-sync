@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+	<defs>
+		<linearGradient id="bg" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#2B6CF6" />
+			<stop offset="1" stop-color="#1439A8" />
+		</linearGradient>
+		<filter id="glyphShadow" x="-40%" y="-40%" width="180%" height="180%">
+			<feDropShadow dx="0" dy="1.4" stdDeviation="1.6" flood-color="#0A1440" flood-opacity="0.35" />
+		</filter>
+	</defs>
+
+	<rect x="0" y="0" width="100" height="100" rx="17.6" fill="url(#bg)" />
+
+	<g transform="translate(14,14) scale(0.72)" filter="url(#glyphShadow)">
+		<path d="M 85.86 53.14 A 36 36 0 0 1 14.14 53.14"
+			fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" />
+		<path d="M 14.14 46.86 A 36 36 0 0 1 85.86 46.86"
+			fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" />
+		<polygon points="6,40 24,48 10,62" fill="#FFFFFF" />
+		<polygon points="94,60 76,52 90,38" fill="#FFFFFF" />
+	</g>
+</svg>
