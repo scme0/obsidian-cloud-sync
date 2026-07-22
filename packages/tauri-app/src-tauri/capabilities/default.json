@@ -21,7 +21,10 @@
 		"process:default",
 		{
 			"identifier": "http:default",
-			"allow": [{ "url": "*" }]
+			"allow": [
+				{ "url": "http://**" },
+				{ "url": "https://**" }
+			]
 		},
 		{
 			"identifier": "fs:scope",
