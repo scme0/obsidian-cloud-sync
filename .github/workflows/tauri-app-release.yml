@@ -1,0 +1,81 @@
+name: Tauri App Release
+
+# Tag scheme: tauri-app-v1.2.3 — separate namespace from the Obsidian plugin's
+# bare-version tags (see obsidian-plugin-release.yml), since this monorepo now
+# ships two independently-versioned artifacts off the same tag-push trigger.
+on:
+  push:
+    tags:
+      - "tauri-app-v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: homelab-m1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies (all workspaces)
+        run: npm ci
+
+      - name: Set up Apple signing
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERT_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/tauri-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 20)
+          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/dev-id-cert.p12"
+          security import "$RUNNER_TEMP/dev-id-cert.p12" \
+            -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+
+      - name: Write App Store Connect API key
+        # notarytool (used by tauri-action for notarization) authenticates with
+        # the same App Store Connect API key type as stitches' TestFlight
+        # upload — reuse APPLE_API_KEY_ID/APPLE_API_ISSUER_ID if already set as
+        # org secrets, but APPLE_API_KEY_P8 must exist in *this* repo since
+        # secrets don't cross repos without an explicit org-secret grant.
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/private_keys"
+          printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8" >> "$GITHUB_ENV"
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
+        with:
+          projectPath: packages/tauri-app
+          tagName: ${{ github.ref_name }}
+          releaseName: "Cloud Drive Sync ${{ github.ref_name }}"
+          releaseBody: "See CHANGELOG for details."
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true

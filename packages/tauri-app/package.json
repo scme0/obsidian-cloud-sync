@@ -1,0 +1,25 @@
+{
+	"name": "@cloud-drive-sync/tauri-app",
+	"version": "0.1.0",
+	"private": true,
+	"scripts": {
+		"dev": "tauri dev",
+		"build": "tauri build",
+		"tauri": "tauri"
+	},
+	"dependencies": {
+		"@cloud-drive-sync/core": "*",
+		"@tauri-apps/api": "^2",
+		"@tauri-apps/plugin-http": "^2",
+		"@tauri-apps/plugin-fs": "^2",
+		"@tauri-apps/plugin-dialog": "^2",
+		"@tauri-apps/plugin-store": "^2",
+		"@tauri-apps/plugin-updater": "^2",
+		"@tauri-apps/plugin-process": "^2"
+	},
+	"devDependencies": {
+		"@tauri-apps/cli": "^2",
+		"typescript": "5.8.3",
+		"vite": "^6"
+	}
+}

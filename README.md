@@ -56,13 +56,13 @@ A personal-use Obsidian plugin that provides two-way sync between your vault and
 ### 4. Build the Plugin
 
 ```bash
-git clone https://github.com/scme0/obsidian-cloud-sync.git
-cd obsidian-cloud-sync
+git clone https://github.com/sm-merlot/cloud-drive-sync.git
+cd cloud-drive-sync
 npm install
-npm run build
+npm run build:obsidian
 ```
 
-This produces `main.js` in the project root and copies all plugin files (`main.js`, `manifest.json`, `styles.css`) to a `dist/` folder for easy deployment.
+This produces `main.js` in `packages/obsidian-plugin/` and copies all plugin files (`main.js`, `manifest.json`, `styles.css`) to `packages/obsidian-plugin/dist/` for easy deployment.
 
 ### 5. Install the Plugin
 
@@ -74,19 +74,19 @@ The plugin must be manually installed into each vault's `.obsidian/plugins/cloud
 # Create the plugin folder
 mkdir -p /path/to/your/vault/.obsidian/plugins/cloud-drive-sync
 
-# Copy the plugin files from dist/
-cp dist/* /path/to/your/vault/.obsidian/plugins/cloud-drive-sync/
+# Copy the plugin files from packages/obsidian-plugin/dist/
+cp packages/obsidian-plugin/dist/* /path/to/your/vault/.obsidian/plugins/cloud-drive-sync/
 ```
 
 For development, symlink instead of copying:
 
 ```bash
-ln -s /path/to/obsidian-cloud-sync/main.js /path/to/vault/.obsidian/plugins/cloud-drive-sync/main.js
-ln -s /path/to/obsidian-cloud-sync/manifest.json /path/to/vault/.obsidian/plugins/cloud-drive-sync/manifest.json
-ln -s /path/to/obsidian-cloud-sync/styles.css /path/to/vault/.obsidian/plugins/cloud-drive-sync/styles.css
+ln -s /path/to/cloud-drive-sync/packages/obsidian-plugin/main.js /path/to/vault/.obsidian/plugins/cloud-drive-sync/main.js
+ln -s /path/to/cloud-drive-sync/packages/obsidian-plugin/manifest.json /path/to/vault/.obsidian/plugins/cloud-drive-sync/manifest.json
+ln -s /path/to/cloud-drive-sync/packages/obsidian-plugin/styles.css /path/to/vault/.obsidian/plugins/cloud-drive-sync/styles.css
 ```
 
-Then run `npm run dev` for auto-rebuild on changes.
+Then run `npm run dev --workspace=packages/obsidian-plugin` for auto-rebuild on changes.
 
 #### Android
 
@@ -124,9 +124,9 @@ The `.obsidian` folder is hidden by default. You'll need a third-party file mana
 
 To update the plugin on all devices without manual file copying:
 
-1. Build the plugin on your desktop: `npm run build`
+1. Build the plugin on your desktop: `npm run build:obsidian`
 2. In Google Drive, create a folder called `.cloud-drive-sync` inside your sync root folder
-3. Upload the contents of `dist/` to that folder
+3. Upload the contents of `packages/obsidian-plugin/dist/` to that folder
 4. On each device, the plugin checks this folder after every manual sync and on startup, auto-updating and reloading if files have changed
 
 The `.cloud-drive-sync` folder is excluded from vault sync (dotfolder), so it only contains plugin build artifacts and won't appear in your vault.
@@ -193,57 +193,73 @@ It receives the `?code=` parameter from Google after the user authorises the app
 
 If the Cloudflare Pages URL ever changes:
 
-1. Update `REDIRECT_URI` in `src/providers/google-drive/google-drive-auth.ts`
+1. Update `REDIRECT_URI` in `packages/obsidian-plugin/src/providers/google-drive/google-drive-auth.ts`
 2. Update the **Authorized redirect URI** in [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services** → **Credentials** → your OAuth client
 3. Update this README
 
 ## Development
 
 ```bash
-# Install dependencies
+# Install dependencies (all workspaces)
 npm install
 
-# Build for production
-npm run build
+# Build the Obsidian plugin for production
+npm run build:obsidian
 
 # Watch mode (auto-rebuild)
-npm run dev
+npm run dev --workspace=packages/obsidian-plugin
 
-# Run tests
+# Run all workspace tests
 npm test
 
-# Watch tests
-npm run test:watch
+# Watch core package tests
+npm run test:watch --workspace=packages/core
 ```
 
 ### Project Structure
 
+This is an npm-workspaces monorepo. `packages/core` holds the framework-agnostic
+sync logic (providers, sync engines, state store, utils) shared by every
+consumer; `packages/obsidian-plugin` is the Obsidian plugin shell.
+
 ```
-src/
-  main.ts                          # Plugin entry point
-  settings.ts                      # Settings tab UI
-  types.ts                         # Shared types and interfaces
-  updater.ts                       # Self-update from Drive
-  providers/
-    cloud-provider.ts              # Abstract provider interface
-    google-drive/
-      google-drive-api.ts          # Google Drive REST API wrapper
-      google-drive-auth.ts         # OAuth 2.0 + token refresh
-      google-drive-provider.ts     # CloudProvider implementation
-  sync/
-    sync-engine.ts                 # Core two-way sync algorithm
-    sync-state.ts                  # Per-file tracking database
-    sync-results-modal.ts          # Conflict/error resolution UI
-    first-sync-modal.ts            # First sync strategy picker
-    folder-picker-modal.ts         # Drive folder browser
-  util/
-    hash.ts                        # MD5 implementation
-    path.ts                        # Path helpers, glob matching
+packages/
+  core/                             # @cloud-drive-sync/core — no Obsidian dependency
+    src/
+      types.ts                      # Shared types and interfaces
+      index.ts                      # Public barrel export
+      providers/
+        cloud-provider.ts           # Abstract provider interface
+        s3/
+          s3-api.ts                 # S3 REST client (SigV4 via Web Crypto)
+          s3-provider.ts            # CloudProvider implementation
+      sync/
+        sync-state.ts               # Per-file tracking database
+        mirror-sync-engine.ts       # Existence-only bidirectional mirror (no content-conflict handling — for write-once files)
+      http/
+        http-client.ts              # HttpClient port — host shell supplies the transport (CORS bypass)
+      fs/
+        local-file-system.ts        # LocalFileSystem port — host shell supplies real filesystem access
+      util/
+        hash.ts                     # MD5 implementation
+        path.ts                     # Path helpers, glob matching
+        merge.ts                    # 2-way line merge (used by the Obsidian plugin's full SyncEngine)
+    tests/
+
+  obsidian-plugin/                   # Obsidian plugin shell
+    manifest.json / versions.json / styles.css / esbuild.config.mjs
+    src/
+      main.ts                       # Plugin entry point
+      settings.ts                   # Settings tab UI
+      http/
+        obsidian-http-client.ts     # HttpClient impl: Node https (desktop) / requestUrl (mobile)
+      providers/google-drive/       # Google Drive provider (Obsidian-only — requestUrl-based, not shared)
+      sync/
+        sync-engine.ts              # Full bidirectional sync engine w/ content-conflict handling
+        sync-state.ts / *-modal.ts  # Conflict/first-sync/results modals (Obsidian Modal UI)
+
 docs/
-  index.html                       # Cloudflare Pages OAuth redirect (https://cloud-drive-sync.pages.dev/)
-tests/
-  hash.test.ts                     # MD5 tests
-  path.test.ts                     # Path utility tests
+  index.html                        # Cloudflare Pages OAuth redirect (https://cloud-drive-sync.pages.dev/)
 ```
 
 ## License
