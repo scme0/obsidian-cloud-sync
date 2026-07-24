@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { S3Api } from "../src/providers/s3/s3-api";
 import { S3Provider } from "../src/providers/s3/s3-provider";
 import { MULTIPART_PART_SIZE_BYTES, MULTIPART_THRESHOLD_BYTES } from "../src/util/constants";
@@ -39,22 +39,33 @@ describe("SigV4 path-prefix endpoints", () => {
 		http.respondWith(() => ok());
 	});
 
-	it("URL and signed path both include the endpoint path prefix", async () => {
+	it("request URL includes the endpoint path prefix (for routing)", async () => {
 		const api = new S3Api({ ...CFG, endpoint: "https://h.example/alice" }, http);
 		await api.putObject("Notes/a.md", new TextEncoder().encode("x").buffer, "text/markdown");
 		const req = http.requests[0]!.req;
 		expect(req.url).toBe("https://h.example/alice/Drive/Notes/a.md");
 	});
 
-	it("prefixed and unprefixed endpoints produce different signatures for the same operation", async () => {
-		const apiPlain = new S3Api({ ...CFG, endpoint: "https://h.example" }, http);
-		const apiPrefixed = new S3Api({ ...CFG, endpoint: "https://h.example/alice" }, http);
-		await apiPlain.putObject("a.md", new ArrayBuffer(0), "text/markdown");
-		await apiPrefixed.putObject("a.md", new ArrayBuffer(0), "text/markdown");
-		const [plain, prefixed] = http.requests.map((r) => r.req.headers!["authorization"]);
-		expect(plain).toBeDefined();
-		expect(prefixed).toBeDefined();
-		expect(plain).not.toBe(prefixed);
+	it("path prefix is NOT signed — rclone --baseurl strips it before verifying", async () => {
+		// Same host + bucket + key + fixed clock ⇒ identical signature whether or
+		// not the endpoint carries a routing prefix (the prefix is URL-only).
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+		try {
+			const httpA = new FakeHttpClient(); httpA.respondWith(() => ok());
+			const httpB = new FakeHttpClient(); httpB.respondWith(() => ok());
+			await new S3Api({ ...CFG, endpoint: "https://h.example" }, httpA)
+				.putObject("a.md", new ArrayBuffer(0), "text/markdown");
+			await new S3Api({ ...CFG, endpoint: "https://h.example/alice" }, httpB)
+				.putObject("a.md", new ArrayBuffer(0), "text/markdown");
+			expect(httpA.requests[0]!.req.headers!["authorization"])
+				.toBe(httpB.requests[0]!.req.headers!["authorization"]);
+			// ...but the URLs differ (prefix present only in the request URL)
+			expect(httpA.requests[0]!.req.url).toBe("https://h.example/Drive/a.md");
+			expect(httpB.requests[0]!.req.url).toBe("https://h.example/alice/Drive/a.md");
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("unprefixed endpoint behaves exactly as before (regression guard)", async () => {

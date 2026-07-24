@@ -12,11 +12,17 @@
 
 		<section>
 			<h2>S3 / rclone</h2>
-			<label>Endpoint <input id="endpoint" placeholder="https://notes.example.com" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
-			<label>Bucket <input id="bucket" placeholder="Audio" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
+			<label>Endpoint <input id="endpoint" placeholder="https://s3.example.com/alice" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
 			<label>Access key <input id="accessKey" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
 			<label>Secret key <input id="secretKey" type="password" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
 			<label>Region <input id="region" placeholder="us-east-1" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
+		</section>
+
+		<section>
+			<h2>Synced folders</h2>
+			<p class="hint">Each pair maps a folder on this Mac to a top-level folder (bucket) in your Drive.</p>
+			<div id="pairs"></div>
+			<button id="addPair" class="secondary">+ Add folder</button>
 		</section>
 
 		<section>
@@ -26,14 +32,6 @@
 				<option value="use-local">Always use local</option>
 				<option value="use-remote">Always use remote</option>
 			</select>
-		</section>
-
-		<section>
-			<h2>Local folder</h2>
-			<div class="row">
-				<input id="localFolder" readonly placeholder="No folder selected" />
-				<button id="chooseFolder">Choose Folder</button>
-			</div>
 		</section>
 
 		<section>
@@ -48,6 +46,18 @@
 
 		<p id="status">Idle</p>
 	</main>
+
+	<template id="pairTemplate">
+		<div class="pair">
+			<input class="pair-bucket" placeholder="Bucket (e.g. Audio)" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" />
+			<div class="row">
+				<input class="pair-folder" readonly placeholder="No folder selected" />
+				<button class="pair-choose" type="button">Choose</button>
+				<button class="pair-remove secondary" type="button" title="Remove">✕</button>
+			</div>
+		</div>
+	</template>
+
 	<script type="module" src="/src/main.ts"></script>
 </body>
 </html>

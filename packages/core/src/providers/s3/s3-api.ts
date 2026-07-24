@@ -103,21 +103,18 @@ export class S3Api {
 		return new URL(this.cfg.endpoint).host;
 	}
 
-	// Endpoint may carry a path component (e.g. https://s3.example.com/alice
-	// behind path-based routing). SigV4 signs the exact request path, so the
-	// prefix must be part of every signed path — the URL builders already get it
-	// for free by concatenating the endpoint string.
-	private get pathPrefix(): string {
-		return new URL(this.cfg.endpoint).pathname.replace(/^\/|\/$/g, "");
-	}
-
+	// The endpoint may carry a routing path (e.g. https://s3.example.com/alice).
+	// That prefix stays in the request URL (for the ingress) but is NOT signed:
+	// rclone's `serve s3 --baseurl /alice` strips the prefix before verifying
+	// SigV4, so the signature must cover only {bucket}/{key}. Verified against a
+	// live rclone-with-baseurl endpoint — signing the prefix gives
+	// SignatureDoesNotMatch.
 	private signedBucketPath(): string {
-		const prefix = this.pathPrefix;
-		return prefix ? `${prefix}/${this.cfg.bucket}` : this.cfg.bucket;
+		return this.cfg.bucket;
 	}
 
 	private signedObjectPath(key: string): string {
-		return `${this.signedBucketPath()}/${key}`;
+		return `${this.cfg.bucket}/${key}`;
 	}
 
 	private objectUrl(key: string, query?: Record<string, string>): string {
