@@ -43,7 +43,7 @@
 			"endpoints": [
 				"https://github.com/sm-merlot/cloud-drive-sync/releases/latest/download/latest.json"
 			],
-			"pubkey": "REPLACE_WITH_GENERATED_PUBLIC_KEY"
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIxN0YwREEyMDg1RTNDRTMKUldUalBGNElvZzEvSWNYSG45akRKeEtZNFdWcys0Y3hHUk9KN0t1bS9lanZ0NjFTdG1ZK3JISWEK"
 		}
 	}
 }
