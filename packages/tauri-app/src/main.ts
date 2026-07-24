@@ -31,7 +31,15 @@ const els = {
 	syncNow: document.querySelector<HTMLButtonElement>("#syncNow")!,
 	status: document.querySelector<HTMLParagraphElement>("#status")!,
 	version: document.querySelector<HTMLParagraphElement>("#version")!,
+	updateBanner: document.querySelector<HTMLDivElement>("#updateBanner")!,
+	updateText: document.querySelector<HTMLSpanElement>("#updateText")!,
+	updateNow: document.querySelector<HTMLButtonElement>("#updateNow")!,
 };
+
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
+type PendingUpdate = Awaited<ReturnType<typeof check>>;
+let pendingUpdate: PendingUpdate = null;
+let updating = false;
 
 let settings: TauriAppSettings;
 let stopWatchers: Array<() => void> = [];
@@ -227,6 +235,38 @@ async function pruneRemovedPairState(oldPairs: SyncPair[], newPairs: SyncPair[])
 
 // ---------- init ----------
 
+async function checkForUpdate(): Promise<void> {
+	try {
+		const update = await check();
+		if (update) {
+			pendingUpdate = update;
+			els.updateText.textContent = `Version ${update.version} available`;
+			els.updateBanner.hidden = false;
+		} else {
+			pendingUpdate = null;
+			els.updateBanner.hidden = true;
+		}
+	} catch (e) {
+		console.error("Update check failed:", e);
+	}
+}
+
+async function applyUpdate(): Promise<void> {
+	if (!pendingUpdate || updating) return;
+	updating = true;
+	els.updateNow.disabled = true;
+	try {
+		els.updateText.textContent = "Downloading update…";
+		await pendingUpdate.downloadAndInstall();
+		els.updateText.textContent = "Restarting…";
+		await relaunch();
+	} catch (e) {
+		els.updateText.textContent = `Update failed: ${e instanceof Error ? e.message : String(e)}`;
+		els.updateNow.disabled = false;
+		updating = false;
+	}
+}
+
 async function init(): Promise<void> {
 	getVersion().then((v) => { els.version.textContent = `v${v}`; }).catch(() => {});
 
@@ -271,21 +311,14 @@ async function init(): Promise<void> {
 	});
 
 	els.syncNow.addEventListener("click", () => void runSync());
+	els.updateNow.addEventListener("click", () => void applyUpdate());
 
 	await listen("tray-sync-now", () => void runSync());
 
-	// Best-effort startup update check — GitHub Releases-backed, see
-	// tauri.conf.json's updater.endpoints and the release CI.
-	try {
-		const update = await check();
-		if (update) {
-			setStatus(`Updating to ${update.version}…`);
-			await update.downloadAndInstall();
-			await relaunch();
-		}
-	} catch (e) {
-		console.error("Update check failed:", e);
-	}
+	// Surface updates via the banner rather than force-installing on startup,
+	// and re-check periodically since the app lives in the tray for a long time.
+	void checkForUpdate();
+	setInterval(() => void checkForUpdate(), UPDATE_CHECK_INTERVAL_MS);
 }
 
 void init();
