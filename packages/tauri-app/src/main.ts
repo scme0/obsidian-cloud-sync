@@ -23,6 +23,10 @@ const els = {
 	pairs: document.querySelector<HTMLDivElement>("#pairs")!,
 	addPair: document.querySelector<HTMLButtonElement>("#addPair")!,
 	pairTemplate: document.querySelector<HTMLTemplateElement>("#pairTemplate")!,
+	loadBuckets: document.querySelector<HTMLButtonElement>("#loadBuckets")!,
+	newBucket: document.querySelector<HTMLInputElement>("#newBucket")!,
+	createBucket: document.querySelector<HTMLButtonElement>("#createBucket")!,
+	bucketList: document.querySelector<HTMLDataListElement>("#bucketList")!,
 	save: document.querySelector<HTMLButtonElement>("#save")!,
 	syncNow: document.querySelector<HTMLButtonElement>("#syncNow")!,
 	status: document.querySelector<HTMLParagraphElement>("#status")!,
@@ -96,6 +100,38 @@ function readForm(): TauriAppSettings {
 
 function credsConfigured(s: TauriAppSettings): boolean {
 	return !!(s.s3.endpoint && s.s3.accessKey && s.s3.secretKey);
+}
+
+// A provider not scoped to any particular bucket, for instance-level ops
+// (list/create bucket). Reads creds straight from the form so it works before
+// Save.
+function browsingProvider(): S3Provider {
+	return new S3Provider({
+		endpoint: els.endpoint.value.trim().replace(/\/$/, ""),
+		bucket: "",
+		accessKey: els.accessKey.value.trim(),
+		secretKey: els.secretKey.value.trim(),
+		region: els.region.value.trim() || "us-east-1",
+	}, new TauriHttpClient());
+}
+
+async function loadBuckets(): Promise<void> {
+	if (!els.endpoint.value.trim() || !els.accessKey.value.trim() || !els.secretKey.value.trim()) {
+		setStatus("Enter endpoint + keys first");
+		return;
+	}
+	setStatus("Loading buckets…");
+	try {
+		const names = await browsingProvider().listBuckets();
+		els.bucketList.replaceChildren(...names.map((n) => {
+			const o = document.createElement("option");
+			o.value = n;
+			return o;
+		}));
+		setStatus(names.length ? `Buckets: ${names.join(", ")}` : "No buckets yet");
+	} catch (e) {
+		setStatus(`Load buckets failed: ${e instanceof Error ? e.message : String(e)}`);
+	}
 }
 
 // ---------- sync ----------
@@ -201,6 +237,26 @@ async function init(): Promise<void> {
 
 	els.addPair.addEventListener("click", () => {
 		renderPairRow({ id: newPairId(), bucket: "", localFolder: "" });
+	});
+
+	els.loadBuckets.addEventListener("click", () => void loadBuckets());
+
+	els.createBucket.addEventListener("click", async () => {
+		const name = els.newBucket.value.trim();
+		if (!name) return;
+		if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(name)) {
+			setStatus("Bucket name must be lowercase letters, digits, hyphens");
+			return;
+		}
+		setStatus(`Creating ${name}…`);
+		try {
+			await browsingProvider().createBucket(name);
+			els.newBucket.value = "";
+			await loadBuckets();
+			setStatus(`Created bucket ${name}`);
+		} catch (e) {
+			setStatus(`Create bucket failed: ${e instanceof Error ? e.message : String(e)}`);
+		}
 	});
 
 	els.save.addEventListener("click", async () => {

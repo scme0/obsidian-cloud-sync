@@ -17,6 +17,15 @@ export class S3Provider implements CloudProvider {
 		return this.api.testConnection();
 	}
 
+	// Instance-level (not bucket-scoped) — the configured bucket is ignored.
+	async listBuckets(): Promise<string[]> {
+		return this.api.listBuckets();
+	}
+
+	async createBucket(name: string): Promise<void> {
+		return this.api.createBucket(name);
+	}
+
 	async listAllFiles(): Promise<RemoteFileInfo[]> {
 		const objects = await this.api.listAllObjects();
 		const files: RemoteFileInfo[] = [];

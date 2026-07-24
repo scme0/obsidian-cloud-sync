@@ -127,6 +127,45 @@ export class S3Api {
 		return `${this.cfg.endpoint}/${this.cfg.bucket}?${new URLSearchParams(query).toString()}`;
 	}
 
+	private rootUrl(): string {
+		// The served root (ListBuckets / CreateBucket target). Endpoint may carry
+		// a routing prefix; rclone --baseurl strips it before verifying, so the
+		// signed path for these is "/" (empty).
+		return `${this.cfg.endpoint}/`;
+	}
+
+	// ListBuckets — top-level dirs served as buckets. Signed path is "/".
+	async listBuckets(): Promise<string[]> {
+		const headers = await buildAuthHeaders(
+			"GET", this.host, "", {},
+			new Uint8Array(0), this.cfg.accessKey, this.cfg.secretKey, this.cfg.region,
+		);
+		const resp = await this.http.request({ url: this.rootUrl(), method: "GET", headers });
+		if (resp.status !== 200) {
+			throw new Error(`S3 list buckets failed (${resp.status}): ${bytesToText(resp.bytes).slice(0, 200)}`);
+		}
+		const text = bytesToText(resp.bytes);
+		// DOM-free parse so this stays usable outside a webview
+		const names: string[] = [];
+		const re = /<Bucket>\s*<Name>([^<]+)<\/Name>/g;
+		let m: RegExpExecArray | null;
+		while ((m = re.exec(text)) !== null) names.push(m[1]!);
+		return names;
+	}
+
+	// CreateBucket — PUT /{name}. rclone enforces S3 naming: lowercase letters,
+	// digits, hyphens only. Uppercase names must be created as dirs server-side.
+	async createBucket(name: string): Promise<void> {
+		const headers = await buildAuthHeaders(
+			"PUT", this.host, name, {},
+			new Uint8Array(0), this.cfg.accessKey, this.cfg.secretKey, this.cfg.region,
+		);
+		const resp = await this.http.request({ url: `${this.cfg.endpoint}/${encodePath(name)}`, method: "PUT", headers });
+		if (resp.status < 200 || resp.status >= 300) {
+			throw new Error(`S3 create bucket failed (${resp.status}): ${bytesToText(resp.bytes).slice(0, 200)}`);
+		}
+	}
+
 	async testConnection(): Promise<boolean> {
 		const query = { "list-type": "2", "max-keys": "1" };
 		const headers = await buildAuthHeaders(

@@ -21,8 +21,14 @@
 		<section>
 			<h2>Synced folders</h2>
 			<p class="hint">Each pair maps a folder on this Mac to a top-level folder (bucket) in your Drive.</p>
+			<div class="row">
+				<button id="loadBuckets" class="secondary" type="button">Load buckets</button>
+				<input id="newBucket" placeholder="new-bucket (lowercase)" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" />
+				<button id="createBucket" class="secondary" type="button">Create</button>
+			</div>
+			<datalist id="bucketList"></datalist>
 			<div id="pairs"></div>
-			<button id="addPair" class="secondary">+ Add folder</button>
+			<button id="addPair" class="secondary" type="button">+ Add folder</button>
 		</section>
 
 		<section>
@@ -50,7 +56,7 @@
 
 	<template id="pairTemplate">
 		<div class="pair">
-			<input class="pair-bucket" placeholder="Bucket (e.g. Audio)" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" />
+			<input class="pair-bucket" list="bucketList" placeholder="Bucket (e.g. Audio)" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" />
 			<div class="row">
 				<input class="pair-folder" readonly placeholder="No folder selected" />
 				<button class="pair-choose" type="button">Choose</button>
