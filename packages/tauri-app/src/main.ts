@@ -1,6 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { S3Provider, SyncStateStore, SyncEngine, type ConflictStrategy, type SyncResult } from "@cloud-drive-sync/core";
@@ -10,7 +11,7 @@ import { TauriSyncUI } from "./sync/tauri-sync-ui";
 import { watchForStableChanges } from "./fs/watch-stable";
 import {
 	loadSettings, saveSettings, loadSyncState, saveSyncState, deleteSyncState,
-	newPairId, type SyncPair, type TauriAppSettings,
+	newPairId, DEFAULT_CONFLICT_STRATEGY, type SyncPair, type TauriAppSettings,
 } from "./store/settings-store";
 
 const els = {
@@ -18,7 +19,6 @@ const els = {
 	accessKey: document.querySelector<HTMLInputElement>("#accessKey")!,
 	secretKey: document.querySelector<HTMLInputElement>("#secretKey")!,
 	region: document.querySelector<HTMLInputElement>("#region")!,
-	conflictStrategy: document.querySelector<HTMLSelectElement>("#conflictStrategy")!,
 	syncIntervalMinutes: document.querySelector<HTMLInputElement>("#syncIntervalMinutes")!,
 	pairs: document.querySelector<HTMLDivElement>("#pairs")!,
 	addPair: document.querySelector<HTMLButtonElement>("#addPair")!,
@@ -29,8 +29,9 @@ const els = {
 	bucketList: document.querySelector<HTMLDataListElement>("#bucketList")!,
 	save: document.querySelector<HTMLButtonElement>("#save")!,
 	syncNow: document.querySelector<HTMLButtonElement>("#syncNow")!,
-	status: document.querySelector<HTMLParagraphElement>("#status")!,
-	version: document.querySelector<HTMLParagraphElement>("#version")!,
+	pauseToggle: document.querySelector<HTMLButtonElement>("#pauseToggle")!,
+	status: document.querySelector<HTMLSpanElement>("#status")!,
+	version: document.querySelector<HTMLSpanElement>("#version")!,
 	updateBanner: document.querySelector<HTMLDivElement>("#updateBanner")!,
 	updateText: document.querySelector<HTMLSpanElement>("#updateText")!,
 	updateNow: document.querySelector<HTMLButtonElement>("#updateNow")!,
@@ -58,6 +59,7 @@ function renderPairRow(pair: SyncPair): void {
 	row.dataset.id = pair.id;
 	row.querySelector<HTMLInputElement>(".pair-bucket")!.value = pair.bucket;
 	row.querySelector<HTMLInputElement>(".pair-folder")!.value = pair.localFolder;
+	row.querySelector<HTMLSelectElement>(".pair-strategy")!.value = pair.conflictStrategy ?? DEFAULT_CONFLICT_STRATEGY;
 
 	row.querySelector<HTMLButtonElement>(".pair-choose")!.addEventListener("click", async () => {
 		const chosen = await open({ directory: true, multiple: false });
@@ -77,7 +79,6 @@ function fillForm(s: TauriAppSettings): void {
 	els.accessKey.value = s.s3.accessKey;
 	els.secretKey.value = s.s3.secretKey;
 	els.region.value = s.s3.region;
-	els.conflictStrategy.value = s.conflictStrategy;
 	els.syncIntervalMinutes.value = String(s.syncIntervalMinutes);
 	els.pairs.replaceChildren();
 	for (const pair of s.pairs) renderPairRow(pair);
@@ -85,11 +86,15 @@ function fillForm(s: TauriAppSettings): void {
 
 function readForm(): TauriAppSettings {
 	const pairs: SyncPair[] = Array.from(els.pairs.querySelectorAll<HTMLDivElement>(".pair"))
-		.map((row) => ({
-			id: row.dataset.id || newPairId(),
-			bucket: row.querySelector<HTMLInputElement>(".pair-bucket")!.value.trim(),
-			localFolder: row.querySelector<HTMLInputElement>(".pair-folder")!.value,
-		}))
+		.map((row) => {
+			const strategy = row.querySelector<HTMLSelectElement>(".pair-strategy")!.value as ConflictStrategy;
+			return {
+				id: row.dataset.id || newPairId(),
+				bucket: row.querySelector<HTMLInputElement>(".pair-bucket")!.value.trim(),
+				localFolder: row.querySelector<HTMLInputElement>(".pair-folder")!.value,
+				conflictStrategy: strategy,
+			};
+		})
 		.filter((p) => p.bucket && p.localFolder);
 
 	return {
@@ -100,7 +105,7 @@ function readForm(): TauriAppSettings {
 			region: els.region.value.trim() || "us-east-1",
 		},
 		pairs,
-		conflictStrategy: (els.conflictStrategy.value || "latest-wins") as ConflictStrategy,
+		paused: settings?.paused ?? false,
 		syncIntervalMinutes: Number(els.syncIntervalMinutes.value) || 0,
 		lastSyncTime: settings?.lastSyncTime ?? 0,
 	};
@@ -145,6 +150,7 @@ async function loadBuckets(): Promise<void> {
 // ---------- sync ----------
 
 async function syncPair(pair: SyncPair): Promise<SyncResult> {
+	const strategy = pair.conflictStrategy ?? DEFAULT_CONFLICT_STRATEGY;
 	const provider = new S3Provider(
 		{ ...settings.s3, bucket: pair.bucket },
 		new TauriHttpClient(),
@@ -154,14 +160,18 @@ async function syncPair(pair: SyncPair): Promise<SyncResult> {
 	const engine = new SyncEngine(
 		new TauriLocalFileSystem(), pair.localFolder,
 		provider, stateStore,
-		new TauriSyncUI(settings.conflictStrategy),
-		{ conflictStrategy: settings.conflictStrategy, excludePatterns: [] },
+		new TauriSyncUI(strategy),
+		{ conflictStrategy: strategy, excludePatterns: [] },
 	);
 	return engine.sync();
 }
 
 async function runSync(): Promise<void> {
 	if (syncing) return;
+	if (settings.paused) {
+		setStatus("Paused");
+		return;
+	}
 	if (!credsConfigured(settings)) {
 		setStatus("Configure S3 credentials first");
 		return;
@@ -206,6 +216,7 @@ async function runSync(): Promise<void> {
 async function restartWatchers(): Promise<void> {
 	for (const stop of stopWatchers) stop();
 	stopWatchers = [];
+	if (settings.paused) return;
 	const fs = new TauriLocalFileSystem();
 	for (const pair of settings.pairs) {
 		if (!pair.localFolder) continue;
@@ -219,9 +230,26 @@ async function restartWatchers(): Promise<void> {
 function restartInterval(): void {
 	if (syncIntervalId !== null) clearInterval(syncIntervalId);
 	syncIntervalId = null;
-	if (settings.syncIntervalMinutes > 0) {
+	if (!settings.paused && settings.syncIntervalMinutes > 0) {
 		syncIntervalId = setInterval(() => void runSync(), settings.syncIntervalMinutes * 60 * 1000);
 	}
+}
+
+// ---------- pause ----------
+
+function reflectPauseUI(): void {
+	els.pauseToggle.textContent = settings.paused ? "Resume" : "Pause";
+	els.pauseToggle.classList.toggle("paused", settings.paused);
+	void invoke("set_tray_paused", { paused: settings.paused }).catch(() => {});
+}
+
+async function setPaused(paused: boolean): Promise<void> {
+	settings.paused = paused;
+	await saveSettings(settings);
+	reflectPauseUI();
+	await restartWatchers();
+	restartInterval();
+	setStatus(paused ? "Paused" : "Resumed");
 }
 
 // Drop persisted sync state for pairs the user removed, so a re-added folder
@@ -235,19 +263,23 @@ async function pruneRemovedPairState(oldPairs: SyncPair[], newPairs: SyncPair[])
 
 // ---------- init ----------
 
-async function checkForUpdate(): Promise<void> {
+async function checkForUpdate(announce = false): Promise<void> {
+	if (announce) setStatus("Checking for updates…");
 	try {
 		const update = await check();
 		if (update) {
 			pendingUpdate = update;
 			els.updateText.textContent = `Version ${update.version} available`;
 			els.updateBanner.hidden = false;
+			if (announce) setStatus(`Update available: ${update.version}`);
 		} else {
 			pendingUpdate = null;
 			els.updateBanner.hidden = true;
+			if (announce) setStatus("You're on the latest version");
 		}
 	} catch (e) {
 		console.error("Update check failed:", e);
+		if (announce) setStatus(`Update check failed: ${e instanceof Error ? e.message : String(e)}`);
 	}
 }
 
@@ -272,8 +304,12 @@ async function init(): Promise<void> {
 
 	settings = await loadSettings();
 	fillForm(settings);
+	reflectPauseUI();
 	await restartWatchers();
 	restartInterval();
+
+	els.pauseToggle.addEventListener("click", () => void setPaused(!settings.paused));
+	await listen("tray-toggle-pause", () => void setPaused(!settings.paused));
 
 	els.addPair.addEventListener("click", () => {
 		renderPairRow({ id: newPairId(), bucket: "", localFolder: "" });
@@ -314,6 +350,7 @@ async function init(): Promise<void> {
 	els.updateNow.addEventListener("click", () => void applyUpdate());
 
 	await listen("tray-sync-now", () => void runSync());
+	await listen("menu-check-updates", () => void checkForUpdate(true));
 
 	// Surface updates via the banner rather than force-installing on startup,
 	// and re-check periodically since the app lives in the tray for a long time.

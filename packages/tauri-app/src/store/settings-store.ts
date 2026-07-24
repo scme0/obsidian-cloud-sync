@@ -4,10 +4,14 @@ import type { ConflictStrategy, SyncState } from "@cloud-drive-sync/core";
 // One local-folder ↔ remote-bucket mapping. Endpoint + credentials are shared
 // across all pairs (same rclone instance / same keys); only the bucket (a
 // top-level dir under the Drive root) and the local folder differ per pair.
+export const DEFAULT_CONFLICT_STRATEGY: ConflictStrategy = "latest-wins";
+
 export interface SyncPair {
 	id: string;
 	bucket: string;
 	localFolder: string;
+	// Per-pair override; undefined = DEFAULT_CONFLICT_STRATEGY (latest-wins)
+	conflictStrategy?: ConflictStrategy;
 }
 
 export interface TauriAppSettings {
@@ -18,7 +22,7 @@ export interface TauriAppSettings {
 		region: string;
 	};
 	pairs: SyncPair[];
-	conflictStrategy: ConflictStrategy;
+	paused: boolean;
 	syncIntervalMinutes: number;
 	lastSyncTime: number;
 }
@@ -26,7 +30,7 @@ export interface TauriAppSettings {
 export const DEFAULT_SETTINGS: TauriAppSettings = {
 	s3: { endpoint: "", accessKey: "", secretKey: "", region: "us-east-1" },
 	pairs: [],
-	conflictStrategy: "latest-wins",
+	paused: false,
 	syncIntervalMinutes: 15,
 	lastSyncTime: 0,
 };
@@ -41,7 +45,7 @@ interface LegacySettings {
 	bucket?: string;
 	localFolder?: string;
 	pairs?: SyncPair[];
-	conflictStrategy?: ConflictStrategy;
+	paused?: boolean;
 	syncIntervalMinutes?: number;
 	lastSyncTime?: number;
 }
@@ -77,7 +81,7 @@ export async function loadSettings(): Promise<TauriAppSettings> {
 	return {
 		s3,
 		pairs,
-		conflictStrategy: saved.conflictStrategy ?? DEFAULT_SETTINGS.conflictStrategy,
+		paused: saved.paused ?? false,
 		syncIntervalMinutes: saved.syncIntervalMinutes ?? DEFAULT_SETTINGS.syncIntervalMinutes,
 		lastSyncTime: saved.lastSyncTime ?? 0,
 	};

@@ -7,65 +7,68 @@
 	<link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
-	<main>
-		<h1>Cloud Drive Sync</h1>
+	<header class="app-header">
+		<div class="brand">
+			<h1>Cloud Drive Sync</h1>
+			<span id="version" class="version"></span>
+		</div>
+		<button id="pauseToggle" class="pause-toggle" type="button">Pause</button>
+	</header>
 
+	<main>
 		<div id="updateBanner" class="update-banner" hidden>
 			<span id="updateText"></span>
 			<button id="updateNow" type="button">Update now</button>
 		</div>
 
-		<section>
-			<h2>S3 / rclone</h2>
+		<section class="card">
+			<h2>Connection</h2>
 			<label>Endpoint <input id="endpoint" placeholder="https://s3.example.com/alice" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
-			<label>Access key <input id="accessKey" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
-			<label>Secret key <input id="secretKey" type="password" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
-			<label>Region <input id="region" placeholder="us-east-1" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
-		</section>
-
-		<section>
-			<h2>Synced folders</h2>
-			<p class="hint">Each pair maps a folder on this Mac to a top-level folder (bucket) in your Drive.</p>
-			<div class="row">
-				<button id="loadBuckets" class="secondary" type="button">Load buckets</button>
-				<input id="newBucket" placeholder="new-bucket (lowercase)" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" />
-				<button id="createBucket" class="secondary" type="button">Create</button>
+			<div class="field-grid">
+				<label>Access key <input id="accessKey" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
+				<label>Secret key <input id="secretKey" type="password" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
+				<label>Region <input id="region" placeholder="us-east-1" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
+				<label>Sync every (min) <input id="syncIntervalMinutes" type="number" min="0" /></label>
 			</div>
+		</section>
+
+		<section class="card">
+			<div class="card-head">
+				<h2>Synced folders</h2>
+				<button id="loadBuckets" class="ghost" type="button">Load buckets</button>
+			</div>
+			<p class="hint">Each row maps a folder on this Mac to a bucket (top-level folder) in your Drive.</p>
 			<datalist id="bucketList"></datalist>
-			<div id="pairs"></div>
-			<button id="addPair" class="secondary" type="button">+ Add folder</button>
+			<div id="pairs" class="pair-list"></div>
+			<button id="addPair" class="ghost add-row" type="button">+ Add folder</button>
+			<div class="new-bucket-row">
+				<input id="newBucket" placeholder="new-bucket-name (lowercase)" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" />
+				<button id="createBucket" class="ghost" type="button">Create bucket</button>
+			</div>
 		</section>
 
-		<section>
-			<h2>Conflict strategy</h2>
-			<select id="conflictStrategy">
-				<option value="latest-wins">Latest wins — newer timestamp takes priority</option>
-				<option value="use-local">Always use local</option>
-				<option value="use-remote">Always use remote</option>
-			</select>
-		</section>
-
-		<section>
-			<h2>Sync interval (minutes)</h2>
-			<input id="syncIntervalMinutes" type="number" min="0" />
-		</section>
-
-		<div class="row">
-			<button id="save">Save</button>
+		<div class="actions">
+			<button id="save" class="primary">Save</button>
 			<button id="syncNow">Sync Now</button>
+			<span id="status" class="status">Idle</span>
 		</div>
-
-		<p id="status">Idle</p>
-		<p id="version" class="version"></p>
 	</main>
 
 	<template id="pairTemplate">
 		<div class="pair">
-			<input class="pair-bucket" list="bucketList" placeholder="Bucket (e.g. Audio)" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" />
-			<div class="row">
-				<input class="pair-folder" readonly placeholder="No folder selected" />
-				<button class="pair-choose" type="button">Choose</button>
-				<button class="pair-remove secondary" type="button" title="Remove">✕</button>
+			<div class="pair-main">
+				<input class="pair-folder" readonly placeholder="No folder selected on this Mac" />
+				<span class="pair-arrow">→</span>
+				<input class="pair-bucket" list="bucketList" placeholder="bucket" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" />
+			</div>
+			<div class="pair-controls">
+				<button class="pair-choose ghost" type="button">Choose folder…</button>
+				<select class="pair-strategy" title="Conflict strategy">
+					<option value="latest-wins">Latest wins</option>
+					<option value="use-local">Always local</option>
+					<option value="use-remote">Always remote</option>
+				</select>
+				<button class="pair-remove ghost danger" type="button" title="Remove">Remove</button>
 			</div>
 		</div>
 	</template>
