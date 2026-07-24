@@ -43,25 +43,6 @@ jobs:
         # builds pin their own esbuild/vite, so resolving fresh is safe here.
         run: npm install --no-audit --no-fund
 
-      - name: Set up Apple signing
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERT_P12 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASSWORD }}
-        run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/tauri-signing.keychain-db"
-          KEYCHAIN_PASSWORD=$(openssl rand -base64 20)
-          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/dev-id-cert.p12"
-          security import "$RUNNER_TEMP/dev-id-cert.p12" \
-            -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A
-          security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH"
-          security default-keychain -s "$KEYCHAIN_PATH"
-
       - name: Write App Store Connect API key
         # notarytool (used by tauri-action for notarization) authenticates with
         # the same App Store Connect API key type as stitches' TestFlight
@@ -82,6 +63,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Let tauri-action own the keychain: it imports the cert into its own
+          # temp keychain with the codesign partition list set correctly. A
+          # manually-created keychain leaves codesign (spawned deep inside the
+          # bundler) unable to use the key non-interactively → errSecInternalComponent.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERT_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_SIGNING_IDENTITY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
