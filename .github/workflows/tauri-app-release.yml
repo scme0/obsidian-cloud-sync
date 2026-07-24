@@ -36,7 +36,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies (all workspaces)
-        run: npm ci
+        # npm install, not npm ci: the tree carries two esbuild majors (obsidian
+        # pins 0.25.5, vitest→vite 8 wants 0.28) that different npm versions
+        # hoist differently, so a lockfile that passes `npm ci` on one npm fails
+        # on another. The release job runs no tests and the obsidian/tauri
+        # builds pin their own esbuild/vite, so resolving fresh is safe here.
+        run: npm install --no-audit --no-fund
 
       - name: Set up Apple signing
         env:
