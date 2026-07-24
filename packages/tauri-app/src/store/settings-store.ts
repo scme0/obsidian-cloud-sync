@@ -1,5 +1,5 @@
 import { load, type Store } from "@tauri-apps/plugin-store";
-import type { SyncState } from "@cloud-drive-sync/core";
+import type { ConflictStrategy, SyncState } from "@cloud-drive-sync/core";
 
 export interface TauriAppSettings {
 	s3: {
@@ -10,6 +10,8 @@ export interface TauriAppSettings {
 		region: string;
 	};
 	localFolder: string;
+	// prompt/smart-merge have no UI here and degrade to latest-wins behavior
+	conflictStrategy: ConflictStrategy;
 	syncIntervalMinutes: number;
 	lastSyncTime: number;
 }
@@ -17,6 +19,7 @@ export interface TauriAppSettings {
 export const DEFAULT_SETTINGS: TauriAppSettings = {
 	s3: { endpoint: "", bucket: "", accessKey: "", secretKey: "", region: "us-east-1" },
 	localFolder: "",
+	conflictStrategy: "latest-wins",
 	syncIntervalMinutes: 15,
 	lastSyncTime: 0,
 };

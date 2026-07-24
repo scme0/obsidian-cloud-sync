@@ -37,7 +37,8 @@ label {
 	margin-bottom: 0.5rem;
 }
 
-input {
+input,
+select {
 	font-size: 0.9rem;
 	padding: 0.4rem 0.5rem;
 }

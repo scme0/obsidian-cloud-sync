@@ -93,14 +93,31 @@ async function buildAuthHeaders(
 // ---------- S3 API class ----------
 
 export class S3Api {
-	constructor(private cfg: S3Config, private http: HttpClient) {}
+	constructor(private cfg: S3Config, private http: HttpClient) {
+		// A trailing slash would put "//" in request URLs while the signed path
+		// has "/" — instant signature mismatch. Normalize once here.
+		this.cfg = { ...cfg, endpoint: cfg.endpoint.replace(/\/+$/, "") };
+	}
 
 	private get host(): string {
 		return new URL(this.cfg.endpoint).host;
 	}
 
-	private objectPath(key: string): string {
-		return `${this.cfg.bucket}/${key}`;
+	// Endpoint may carry a path component (e.g. https://s3.example.com/alice
+	// behind path-based routing). SigV4 signs the exact request path, so the
+	// prefix must be part of every signed path — the URL builders already get it
+	// for free by concatenating the endpoint string.
+	private get pathPrefix(): string {
+		return new URL(this.cfg.endpoint).pathname.replace(/^\/|\/$/g, "");
+	}
+
+	private signedBucketPath(): string {
+		const prefix = this.pathPrefix;
+		return prefix ? `${prefix}/${this.cfg.bucket}` : this.cfg.bucket;
+	}
+
+	private signedObjectPath(key: string): string {
+		return `${this.signedBucketPath()}/${key}`;
 	}
 
 	private objectUrl(key: string, query?: Record<string, string>): string {
@@ -116,7 +133,7 @@ export class S3Api {
 	async testConnection(): Promise<boolean> {
 		const query = { "list-type": "2", "max-keys": "1" };
 		const headers = await buildAuthHeaders(
-			"GET", this.host, this.cfg.bucket, query,
+			"GET", this.host, this.signedBucketPath(), query,
 			new Uint8Array(0), this.cfg.accessKey, this.cfg.secretKey, this.cfg.region,
 		);
 		const resp = await this.http.request({ url: this.bucketUrl(query), method: "GET", headers });
@@ -133,7 +150,7 @@ export class S3Api {
 			if (continuationToken) query["continuation-token"] = continuationToken;
 
 			const headers = await buildAuthHeaders(
-				"GET", this.host, this.cfg.bucket, query,
+				"GET", this.host, this.signedBucketPath(), query,
 				new Uint8Array(0), this.cfg.accessKey, this.cfg.secretKey, this.cfg.region,
 			);
 
@@ -162,7 +179,7 @@ export class S3Api {
 
 	async getObject(key: string): Promise<ArrayBuffer> {
 		const headers = await buildAuthHeaders(
-			"GET", this.host, this.objectPath(key), {},
+			"GET", this.host, this.signedObjectPath(key), {},
 			new Uint8Array(0), this.cfg.accessKey, this.cfg.secretKey, this.cfg.region,
 		);
 		const resp = await this.http.request({ url: this.objectUrl(key), method: "GET", headers });
@@ -178,7 +195,7 @@ export class S3Api {
 	async putObject(key: string, content: ArrayBuffer, _mimeType: string): Promise<void> {
 		const body = new Uint8Array(content);
 		const headers = await buildAuthHeaders(
-			"PUT", this.host, this.objectPath(key), {},
+			"PUT", this.host, this.signedObjectPath(key), {},
 			body, this.cfg.accessKey, this.cfg.secretKey, this.cfg.region,
 		);
 		const resp = await this.http.request({ url: this.objectUrl(key), method: "PUT", headers, body });
@@ -189,12 +206,86 @@ export class S3Api {
 
 	async deleteObject(key: string): Promise<void> {
 		const headers = await buildAuthHeaders(
-			"DELETE", this.host, this.objectPath(key), {},
+			"DELETE", this.host, this.signedObjectPath(key), {},
 			new Uint8Array(0), this.cfg.accessKey, this.cfg.secretKey, this.cfg.region,
 		);
 		const resp = await this.http.request({ url: this.objectUrl(key), method: "DELETE", headers });
 		if (resp.status !== 204 && resp.status !== 200 && resp.status !== 404) {
 			throw new Error(`S3 delete failed (${resp.status}): ${key}`);
+		}
+	}
+
+	// ---------- Multipart upload ----------
+	// Needed above the Cloudflare request-body limit; see MULTIPART_* constants.
+	// UploadId is parsed by regex rather than DOMParser so this file stays
+	// usable in non-DOM runtimes (vitest under node).
+
+	async createMultipartUpload(key: string): Promise<string> {
+		const query = { uploads: "" };
+		const headers = await buildAuthHeaders(
+			"POST", this.host, this.signedObjectPath(key), query,
+			new Uint8Array(0), this.cfg.accessKey, this.cfg.secretKey, this.cfg.region,
+		);
+		const resp = await this.http.request({ url: this.objectUrl(key, query), method: "POST", headers });
+		if (resp.status !== 200) {
+			throw new Error(`S3 create multipart failed (${resp.status}): ${key}`);
+		}
+		const uploadId = /<UploadId>([^<]+)<\/UploadId>/.exec(bytesToText(resp.bytes))?.[1];
+		if (!uploadId) {
+			throw new Error(`S3 create multipart returned no UploadId: ${key}`);
+		}
+		return uploadId;
+	}
+
+	async uploadPart(key: string, uploadId: string, partNumber: number, body: Uint8Array): Promise<string> {
+		const query = { partNumber: String(partNumber), uploadId };
+		const headers = await buildAuthHeaders(
+			"PUT", this.host, this.signedObjectPath(key), query,
+			body, this.cfg.accessKey, this.cfg.secretKey, this.cfg.region,
+		);
+		const resp = await this.http.request({ url: this.objectUrl(key, query), method: "PUT", headers, body });
+		if (resp.status < 200 || resp.status >= 300) {
+			throw new Error(`S3 upload part ${partNumber} failed (${resp.status}): ${key}`);
+		}
+		const etag = (resp.headers["etag"] ?? "").replace(/"/g, "");
+		if (!etag) {
+			throw new Error(`S3 upload part ${partNumber} returned no ETag: ${key}`);
+		}
+		return etag;
+	}
+
+	async completeMultipartUpload(
+		key: string,
+		uploadId: string,
+		parts: { partNumber: number; etag: string }[],
+	): Promise<void> {
+		const manifest = [...parts]
+			.sort((a, b) => a.partNumber - b.partNumber)
+			.map((p) => `<Part><PartNumber>${p.partNumber}</PartNumber><ETag>"${p.etag}"</ETag></Part>`)
+			.join("");
+		const body = new TextEncoder().encode(`<CompleteMultipartUpload>${manifest}</CompleteMultipartUpload>`);
+		const query = { uploadId };
+		const headers = await buildAuthHeaders(
+			"POST", this.host, this.signedObjectPath(key), query,
+			body, this.cfg.accessKey, this.cfg.secretKey, this.cfg.region,
+		);
+		const resp = await this.http.request({ url: this.objectUrl(key, query), method: "POST", headers, body });
+		const text = bytesToText(resp.bytes);
+		// S3 can return 200 with an <Error> body for CompleteMultipartUpload
+		if (resp.status !== 200 || text.includes("<Error>")) {
+			throw new Error(`S3 complete multipart failed (${resp.status}): ${key}: ${text.slice(0, 200)}`);
+		}
+	}
+
+	async abortMultipartUpload(key: string, uploadId: string): Promise<void> {
+		const query = { uploadId };
+		const headers = await buildAuthHeaders(
+			"DELETE", this.host, this.signedObjectPath(key), query,
+			new Uint8Array(0), this.cfg.accessKey, this.cfg.secretKey, this.cfg.region,
+		);
+		const resp = await this.http.request({ url: this.objectUrl(key, query), method: "DELETE", headers });
+		if (resp.status !== 204 && resp.status !== 200 && resp.status !== 404) {
+			throw new Error(`S3 abort multipart failed (${resp.status}): ${key}`);
 		}
 	}
 }

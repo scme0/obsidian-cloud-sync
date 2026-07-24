@@ -2,9 +2,10 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { S3Provider, SyncStateStore, MirrorSyncEngine } from "@cloud-drive-sync/core";
+import { S3Provider, SyncStateStore, SyncEngine, type ConflictStrategy } from "@cloud-drive-sync/core";
 import { TauriHttpClient } from "./http/tauri-http-client";
 import { TauriLocalFileSystem } from "./fs/tauri-local-fs";
+import { TauriSyncUI } from "./sync/tauri-sync-ui";
 import { watchForStableChanges } from "./fs/watch-stable";
 import { loadSettings, saveSettings, loadSyncState, saveSyncState, type TauriAppSettings } from "./store/settings-store";
 
@@ -14,6 +15,7 @@ const els = {
 	accessKey: document.querySelector<HTMLInputElement>("#accessKey")!,
 	secretKey: document.querySelector<HTMLInputElement>("#secretKey")!,
 	region: document.querySelector<HTMLInputElement>("#region")!,
+	conflictStrategy: document.querySelector<HTMLSelectElement>("#conflictStrategy")!,
 	localFolder: document.querySelector<HTMLInputElement>("#localFolder")!,
 	syncIntervalMinutes: document.querySelector<HTMLInputElement>("#syncIntervalMinutes")!,
 	chooseFolder: document.querySelector<HTMLButtonElement>("#chooseFolder")!,
@@ -33,6 +35,7 @@ function fillForm(s: TauriAppSettings): void {
 	els.accessKey.value = s.s3.accessKey;
 	els.secretKey.value = s.s3.secretKey;
 	els.region.value = s.s3.region;
+	els.conflictStrategy.value = s.conflictStrategy;
 	els.localFolder.value = s.localFolder;
 	els.syncIntervalMinutes.value = String(s.syncIntervalMinutes);
 }
@@ -47,6 +50,7 @@ function readForm(): TauriAppSettings {
 			region: els.region.value.trim() || "us-east-1",
 		},
 		localFolder: els.localFolder.value,
+		conflictStrategy: (els.conflictStrategy.value || "latest-wins") as ConflictStrategy,
 		syncIntervalMinutes: Number(els.syncIntervalMinutes.value) || 0,
 		lastSyncTime: settings?.lastSyncTime ?? 0,
 	};
@@ -73,7 +77,13 @@ async function runSync(): Promise<void> {
 		const provider = new S3Provider(settings.s3, new TauriHttpClient());
 		const syncState = await loadSyncState();
 		const stateStore = new SyncStateStore(syncState, () => saveSyncState(syncState));
-		const engine = new MirrorSyncEngine(provider, stateStore, new TauriLocalFileSystem(), settings.localFolder);
+		const engine = new SyncEngine(
+			new TauriLocalFileSystem(), settings.localFolder,
+			provider, stateStore,
+			new TauriSyncUI(settings.conflictStrategy),
+			{ conflictStrategy: settings.conflictStrategy, excludePatterns: [] },
+		);
+		engine.onNotice = (msg) => setStatus(msg);
 
 		const result = await engine.sync();
 

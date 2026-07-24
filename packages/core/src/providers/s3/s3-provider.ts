@@ -1,6 +1,7 @@
 import type { CloudProvider } from "../cloud-provider";
 import type { RemoteFileInfo } from "../../types";
 import { guessMimeType } from "../../util/path";
+import { MULTIPART_PART_SIZE_BYTES, MULTIPART_THRESHOLD_BYTES } from "../../util/constants";
 import type { HttpClient } from "../../http/http-client";
 import { S3Api, type S3Config } from "./s3-api";
 
@@ -84,12 +85,43 @@ export class S3Provider implements CloudProvider {
 		mimeType: string,
 	): Promise<string> {
 		const key = parentFolderId ? `${parentFolderId}/${name}` : name;
-		await this.api.putObject(key, content, mimeType);
+		await this.putAnySize(key, content, mimeType);
 		return key;
 	}
 
 	async updateFile(remoteId: string, content: ArrayBuffer, mimeType: string): Promise<void> {
-		await this.api.putObject(remoteId, content, mimeType);
+		await this.putAnySize(remoteId, content, mimeType);
+	}
+
+	private async putAnySize(key: string, content: ArrayBuffer, mimeType: string): Promise<void> {
+		if (content.byteLength < MULTIPART_THRESHOLD_BYTES) {
+			await this.api.putObject(key, content, mimeType);
+			return;
+		}
+		await this.uploadLarge(key, content);
+	}
+
+	// Sequential multipart upload with abort-on-failure so incomplete uploads
+	// never accumulate on the backend. No part concurrency: the buffer is fully
+	// resident either way, so parallelism buys nothing and complicates aborts.
+	private async uploadLarge(key: string, content: ArrayBuffer): Promise<void> {
+		const uploadId = await this.api.createMultipartUpload(key);
+		const totalParts = Math.ceil(content.byteLength / MULTIPART_PART_SIZE_BYTES);
+		const parts: { partNumber: number; etag: string }[] = [];
+		try {
+			for (let i = 0; i < totalParts; i++) {
+				const start = i * MULTIPART_PART_SIZE_BYTES;
+				const end = Math.min(start + MULTIPART_PART_SIZE_BYTES, content.byteLength);
+				const etag = await this.api.uploadPart(key, uploadId, i + 1, new Uint8Array(content, start, end - start));
+				parts.push({ partNumber: i + 1, etag });
+			}
+		} catch (e) {
+			await this.api.abortMultipartUpload(key, uploadId).catch(() => {});
+			throw new Error(
+				`multipart upload failed at part ${parts.length + 1}/${totalParts} for ${key}: ${e instanceof Error ? e.message : String(e)}`
+			);
+		}
+		await this.api.completeMultipartUpload(key, uploadId, parts);
 	}
 
 	async deleteFile(remoteId: string): Promise<void> {

@@ -1,20 +1,7 @@
 import { App, Modal, Platform, Setting } from "obsidian";
-import type { ConflictResolution } from "@cloud-drive-sync/core";
+import type { ConflictResolution, SyncIssue, SyncIssueResolution } from "@cloud-drive-sync/core";
 
-export interface SyncIssue {
-	vaultPath: string;
-	type: "conflict" | "error";
-	remoteId?: string;
-	localModTime?: number;
-	remoteModTime?: number;
-	errorMessage?: string;
-}
-
-export interface SyncIssueResolution {
-	vaultPath: string;
-	resolution: ConflictResolution | "retry";
-	remoteId?: string;
-}
+export type { SyncIssue, SyncIssueResolution };
 
 export class SyncResultsModal extends Modal {
 	private issues: SyncIssue[];
@@ -37,7 +24,19 @@ export class SyncResultsModal extends Modal {
 		});
 
 		const conflicts = this.issues.filter((i) => i.type === "conflict");
+		const deleteConflicts = this.issues.filter((i) => i.type === "delete-conflict");
 		const errors = this.issues.filter((i) => i.type === "error");
+
+		if (deleteConflicts.length > 0) {
+			contentEl.createEl("h3", { text: `Delete conflicts (${deleteConflicts.length})` });
+			contentEl.createEl("p", {
+				text: "Deleted here, but changed on Drive since your last sync. Local = delete from Drive, Remote = restore the file.",
+				cls: "cloud-sync-results-desc",
+			});
+			for (const issue of deleteConflicts) {
+				this.renderConflictRow(contentEl, issue, false);
+			}
+		}
 
 		if (conflicts.length > 0) {
 			contentEl.createEl("h3", { text: `Conflicts (${conflicts.length})` });
@@ -114,7 +113,7 @@ export class SyncResultsModal extends Modal {
 		this.onOpen();
 	}
 
-	private renderConflictRow(containerEl: HTMLElement, issue: SyncIssue): void {
+	private renderConflictRow(containerEl: HTMLElement, issue: SyncIssue, allowMerge = true): void {
 		const current = this.resolutions.get(issue.vaultPath);
 		const resolved = current?.resolution;
 
@@ -152,7 +151,7 @@ export class SyncResultsModal extends Modal {
 				});
 			});
 
-		if (Platform.isDesktop) {
+		if (Platform.isDesktop && allowMerge) {
 			setting.addButton((btn) => {
 				btn.setButtonText("Merge");
 				if (resolved === "merge") btn.setCta();

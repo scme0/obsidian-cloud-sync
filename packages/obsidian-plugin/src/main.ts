@@ -1,12 +1,22 @@
 import { ItemView, Notice, Platform, Plugin, TFile, TFolder, TAbstractFile, setIcon } from "obsidian";
-import { DEFAULT_SETTINGS, type PluginSettings, S3Provider, SyncStateStore, isDotPath, shouldExclude } from "@cloud-drive-sync/core";
+import {
+	DEFAULT_SETTINGS,
+	SyncEngine,
+	S3Provider,
+	SyncStateStore,
+	isDotPath,
+	shouldExclude,
+	type CloudProvider,
+	type PluginSettings,
+} from "@cloud-drive-sync/core";
 import { CloudSyncSettingTab } from "./settings";
 import { FolderPickerModal } from "./sync/folder-picker-modal";
 import { GoogleDriveApi } from "./providers/google-drive/google-drive-api";
 import { GoogleDriveAuth } from "./providers/google-drive/google-drive-auth";
 import { GoogleDriveProvider } from "./providers/google-drive/google-drive-provider";
-import { SyncEngine } from "./sync/sync-engine";
 import { ObsidianHttpClient } from "./http/obsidian-http-client";
+import { ObsidianLocalFileSystem } from "./fs/obsidian-local-fs";
+import { ObsidianSyncUI } from "./sync/obsidian-sync-ui";
 
 const DEBOUNCE_MS = 5000;
 const STATUS_REFRESH_MS = 10_000;
@@ -225,6 +235,25 @@ export default class CloudSyncPlugin extends Plugin {
 		}
 	}
 
+	private buildEngine(provider: CloudProvider, stateStore: SyncStateStore): SyncEngine {
+		const ui = new ObsidianSyncUI(
+			this.app, provider, stateStore,
+			this.settings.debugMode ?? false,
+			this.settings.mergeToolCommand,
+		);
+		const engine = new SyncEngine(
+			new ObsidianLocalFileSystem(this.app), "",
+			provider, stateStore, ui,
+			{
+				conflictStrategy: this.settings.conflictStrategy,
+				excludePatterns: this.settings.excludePatterns,
+				debugMode: this.settings.debugMode,
+			},
+		);
+		engine.onNotice = (msg) => new Notice(msg);
+		return engine;
+	}
+
 	private getSyncEngine(): SyncEngine | null {
 		if (this.settings.provider === "s3") {
 			const s3 = this.settings.s3;
@@ -240,7 +269,7 @@ export default class CloudSyncPlugin extends Plugin {
 				region: s3.region || "us-east-1",
 			}, new ObsidianHttpClient());
 			const stateStore = new SyncStateStore(this.settings.syncState, () => this.saveSettings());
-			return new SyncEngine(this.app, provider, stateStore, this.settings);
+			return this.buildEngine(provider, stateStore);
 		}
 
 		if (this.settings.provider !== "google-drive") {
@@ -265,7 +294,7 @@ export default class CloudSyncPlugin extends Plugin {
 			this.saveSettings()
 		);
 
-		return new SyncEngine(this.app, provider, stateStore, this.settings);
+		return this.buildEngine(provider, stateStore);
 	}
 
 	async runSync(manual = false): Promise<void> {

@@ -5,6 +5,9 @@ export interface SyncFileRecord {
 	localModTime: number;
 	remoteModTime: number;
 	contentHash: string;
+	// local file size at last sync; absent on records persisted before this
+	// field existed — comparisons must treat undefined as "unknown", not "changed"
+	size?: number;
 }
 
 export interface SyncState {

@@ -12,11 +12,20 @@
 
 		<section>
 			<h2>S3 / rclone</h2>
-			<label>Endpoint <input id="endpoint" placeholder="https://notes.example.com" /></label>
-			<label>Bucket <input id="bucket" placeholder="Audio" /></label>
-			<label>Access key <input id="accessKey" /></label>
-			<label>Secret key <input id="secretKey" type="password" /></label>
-			<label>Region <input id="region" placeholder="us-east-1" /></label>
+			<label>Endpoint <input id="endpoint" placeholder="https://notes.example.com" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
+			<label>Bucket <input id="bucket" placeholder="Audio" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
+			<label>Access key <input id="accessKey" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
+			<label>Secret key <input id="secretKey" type="password" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
+			<label>Region <input id="region" placeholder="us-east-1" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" /></label>
+		</section>
+
+		<section>
+			<h2>Conflict strategy</h2>
+			<select id="conflictStrategy">
+				<option value="latest-wins">Latest wins — newer timestamp takes priority</option>
+				<option value="use-local">Always use local</option>
+				<option value="use-remote">Always use remote</option>
+			</select>
 		</section>
 
 		<section>

@@ -1,6 +1,7 @@
 import { App, Modal, Setting } from "obsidian";
+import type { FirstSyncStrategy } from "@cloud-drive-sync/core";
 
-export type FirstSyncStrategy = "download" | "upload" | "merge";
+export type { FirstSyncStrategy };
 
 export class FirstSyncModal extends Modal {
 	private resolvePromise: ((value: FirstSyncStrategy) => void) | null = null;
