@@ -16,7 +16,7 @@
 			fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" />
 		<path d="M 14.14 46.86 A 36 36 0 0 1 85.86 46.86"
 			fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" />
-		<polygon points="6,40 24,48 10,62" fill="#FFFFFF" />
-		<polygon points="94,60 76,52 90,38" fill="#FFFFFF" />
+		<polygon points="13.18,42.18 7.17,53.75 21.11,52.53" fill="#FFFFFF" />
+		<polygon points="86.82,57.82 92.83,46.25 78.89,47.47" fill="#FFFFFF" />
 	</g>
 </svg>
