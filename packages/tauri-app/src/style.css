@@ -61,3 +61,10 @@ button {
 	font-size: 0.85rem;
 	opacity: 0.7;
 }
+
+.version {
+	font-size: 0.7rem;
+	opacity: 0.45;
+	text-align: right;
+	margin: 0;
+}

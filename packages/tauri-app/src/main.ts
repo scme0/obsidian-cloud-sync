@@ -1,4 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -25,6 +26,7 @@ const els = {
 	save: document.querySelector<HTMLButtonElement>("#save")!,
 	syncNow: document.querySelector<HTMLButtonElement>("#syncNow")!,
 	status: document.querySelector<HTMLParagraphElement>("#status")!,
+	version: document.querySelector<HTMLParagraphElement>("#version")!,
 };
 
 let settings: TauriAppSettings;
@@ -190,6 +192,8 @@ async function pruneRemovedPairState(oldPairs: SyncPair[], newPairs: SyncPair[])
 // ---------- init ----------
 
 async function init(): Promise<void> {
+	getVersion().then((v) => { els.version.textContent = `v${v}`; }).catch(() => {});
+
 	settings = await loadSettings();
 	fillForm(settings);
 	await restartWatchers();
