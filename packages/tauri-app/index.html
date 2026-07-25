@@ -35,16 +35,12 @@
 		<section class="card">
 			<div class="card-head">
 				<h2>Synced folders</h2>
-				<button id="loadBuckets" class="ghost" type="button">Load buckets</button>
+				<button id="loadBuckets" class="ghost" type="button">Refresh buckets</button>
 			</div>
-			<p class="hint">Each row maps a folder on this Mac to a bucket (top-level folder) in your Drive.</p>
+			<p class="hint">Each row maps a folder on this Mac to a bucket in your Drive. Pick an existing bucket or type a new lowercase name — it's created on sync.</p>
 			<datalist id="bucketList"></datalist>
 			<div id="pairs" class="pair-list"></div>
 			<button id="addPair" class="ghost add-row" type="button">+ Add folder</button>
-			<div class="new-bucket-row">
-				<input id="newBucket" placeholder="new-bucket-name (lowercase)" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" />
-				<button id="createBucket" class="ghost" type="button">Create bucket</button>
-			</div>
 		</section>
 
 		<div class="actions">
@@ -57,12 +53,11 @@
 	<template id="pairTemplate">
 		<div class="pair">
 			<div class="pair-main">
-				<input class="pair-folder" readonly placeholder="No folder selected on this Mac" />
+				<button class="pair-folder" type="button" title="Click to choose a folder"><span class="pair-folder-text"></span></button>
 				<span class="pair-arrow">→</span>
-				<input class="pair-bucket" list="bucketList" placeholder="bucket" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" />
+				<input class="pair-bucket" list="bucketList" placeholder="bucket" title="Pick or type a bucket" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" />
 			</div>
 			<div class="pair-controls">
-				<button class="pair-choose ghost" type="button">Choose folder…</button>
 				<select class="pair-strategy" title="Conflict strategy">
 					<option value="latest-wins">Latest wins</option>
 					<option value="use-local">Always local</option>

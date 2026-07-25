@@ -24,8 +24,6 @@ const els = {
 	addPair: document.querySelector<HTMLButtonElement>("#addPair")!,
 	pairTemplate: document.querySelector<HTMLTemplateElement>("#pairTemplate")!,
 	loadBuckets: document.querySelector<HTMLButtonElement>("#loadBuckets")!,
-	newBucket: document.querySelector<HTMLInputElement>("#newBucket")!,
-	createBucket: document.querySelector<HTMLButtonElement>("#createBucket")!,
 	bucketList: document.querySelector<HTMLDataListElement>("#bucketList")!,
 	save: document.querySelector<HTMLButtonElement>("#save")!,
 	syncNow: document.querySelector<HTMLButtonElement>("#syncNow")!,
@@ -46,6 +44,8 @@ let settings: TauriAppSettings;
 let stopWatchers: Array<() => void> = [];
 let syncIntervalId: ReturnType<typeof setInterval> | null = null;
 let syncing = false;
+let bucketNames: string[] = [];
+let bucketsLoaded = false;
 
 function setStatus(text: string): void {
 	els.status.textContent = text;
@@ -53,20 +53,67 @@ function setStatus(text: string): void {
 
 // ---------- form <-> settings ----------
 
+function credsFromForm(): boolean {
+	return !!(els.endpoint.value.trim() && els.accessKey.value.trim() && els.secretKey.value.trim());
+}
+
+const VALID_BUCKET = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+
+// Resolve a user-typed bucket name to an actual bucket:
+//  - case-insensitive match to an existing bucket → reuse its exact name
+//    (so typing "Audio" uses the existing "Audio", not a new "audio")
+//  - otherwise lowercase it; if that's a valid S3 name, it's a new bucket to
+//    create; if still invalid (spaces/symbols), return a clear error.
+function resolveBucket(typed: string): { bucket?: string; create?: boolean; error?: string } {
+	const t = typed.trim();
+	if (!t) return { error: "Name a bucket for each folder" };
+	const existing = bucketNames.find((b) => b.toLowerCase() === t.toLowerCase());
+	if (existing) return { bucket: existing };
+	const lower = t.toLowerCase();
+	if (!VALID_BUCKET.test(lower)) {
+		return { error: `"${t}" isn't a valid bucket name — use letters, numbers and hyphens only` };
+	}
+	return { bucket: lower, create: true };
+}
+
+function pairFolderText(el: HTMLButtonElement): HTMLSpanElement {
+	return el.querySelector<HTMLSpanElement>(".pair-folder-text")!;
+}
+
 function renderPairRow(pair: SyncPair): void {
 	const frag = els.pairTemplate.content.cloneNode(true) as DocumentFragment;
 	const row = frag.querySelector<HTMLDivElement>(".pair")!;
 	row.dataset.id = pair.id;
-	row.querySelector<HTMLInputElement>(".pair-bucket")!.value = pair.bucket;
-	row.querySelector<HTMLInputElement>(".pair-folder")!.value = pair.localFolder;
-	row.querySelector<HTMLSelectElement>(".pair-strategy")!.value = pair.conflictStrategy ?? DEFAULT_CONFLICT_STRATEGY;
 
-	row.querySelector<HTMLButtonElement>(".pair-choose")!.addEventListener("click", async () => {
+	const folderBtn = row.querySelector<HTMLButtonElement>(".pair-folder")!;
+	folderBtn.dataset.path = pair.localFolder;
+	pairFolderText(folderBtn).textContent = pair.localFolder || "Choose a folder on this Mac…";
+	folderBtn.classList.toggle("empty", !pair.localFolder);
+	folderBtn.addEventListener("click", async () => {
 		const chosen = await open({ directory: true, multiple: false });
 		if (typeof chosen === "string") {
-			row.querySelector<HTMLInputElement>(".pair-folder")!.value = chosen;
+			folderBtn.dataset.path = chosen;
+			pairFolderText(folderBtn).textContent = chosen;
+			folderBtn.classList.remove("empty");
 		}
 	});
+
+	const bucketInput = row.querySelector<HTMLInputElement>(".pair-bucket")!;
+	bucketInput.value = pair.bucket;
+	// Lazy-load the bucket list the first time a field is focused.
+	bucketInput.addEventListener("focus", () => {
+		if (!bucketsLoaded && credsFromForm()) void loadBuckets();
+	});
+	// On blur, tidy the typed value: reuse an existing bucket's exact casing, or
+	// lowercase a new name (leaving genuinely-invalid names for the sync error).
+	bucketInput.addEventListener("blur", () => {
+		const v = bucketInput.value.trim();
+		if (!v) return;
+		const existing = bucketNames.find((b) => b.toLowerCase() === v.toLowerCase());
+		bucketInput.value = existing ?? v.toLowerCase();
+	});
+
+	row.querySelector<HTMLSelectElement>(".pair-strategy")!.value = pair.conflictStrategy ?? DEFAULT_CONFLICT_STRATEGY;
 	row.querySelector<HTMLButtonElement>(".pair-remove")!.addEventListener("click", () => {
 		row.remove();
 	});
@@ -91,7 +138,7 @@ function readForm(): TauriAppSettings {
 			return {
 				id: row.dataset.id || newPairId(),
 				bucket: row.querySelector<HTMLInputElement>(".pair-bucket")!.value.trim(),
-				localFolder: row.querySelector<HTMLInputElement>(".pair-folder")!.value,
+				localFolder: row.querySelector<HTMLButtonElement>(".pair-folder")!.dataset.path || "",
 				conflictStrategy: strategy,
 			};
 		})
@@ -128,31 +175,53 @@ function browsingProvider(): S3Provider {
 	}, new TauriHttpClient());
 }
 
-async function loadBuckets(): Promise<void> {
-	if (!els.endpoint.value.trim() || !els.accessKey.value.trim() || !els.secretKey.value.trim()) {
-		setStatus("Enter endpoint + keys first");
+function refreshBucketDatalist(): void {
+	els.bucketList.replaceChildren(...bucketNames.map((n) => {
+		const o = document.createElement("option");
+		o.value = n;
+		return o;
+	}));
+}
+
+async function loadBuckets(announce = true): Promise<void> {
+	if (!credsFromForm()) {
+		if (announce) setStatus("Enter endpoint + keys first");
 		return;
 	}
-	setStatus("Loading buckets…");
+	if (announce) setStatus("Loading buckets…");
 	try {
-		const names = await browsingProvider().listBuckets();
-		els.bucketList.replaceChildren(...names.map((n) => {
-			const o = document.createElement("option");
-			o.value = n;
-			return o;
-		}));
-		setStatus(names.length ? `Buckets: ${names.join(", ")}` : "No buckets yet");
+		bucketNames = await browsingProvider().listBuckets();
+		bucketsLoaded = true;
+		refreshBucketDatalist();
+		if (announce) setStatus(bucketNames.length ? `Buckets: ${bucketNames.join(", ")}` : "No buckets yet");
 	} catch (e) {
-		setStatus(`Load buckets failed: ${e instanceof Error ? e.message : String(e)}`);
+		if (announce) setStatus(`Load buckets failed: ${e instanceof Error ? e.message : String(e)}`);
 	}
 }
 
 // ---------- sync ----------
 
+// Resolve the pair's typed bucket to a real one, creating it if it's a new,
+// valid lowercase name. Throws with a friendly message on invalid names.
+async function ensureBucket(typed: string): Promise<string> {
+	if (!bucketsLoaded) await loadBuckets(false);
+	const r = resolveBucket(typed);
+	if (r.error || !r.bucket) throw new Error(r.error ?? "Invalid bucket");
+	if (r.create) {
+		await browsingProvider().createBucket(r.bucket);
+		if (!bucketNames.includes(r.bucket)) {
+			bucketNames.push(r.bucket);
+			refreshBucketDatalist();
+		}
+	}
+	return r.bucket;
+}
+
 async function syncPair(pair: SyncPair): Promise<SyncResult> {
 	const strategy = pair.conflictStrategy ?? DEFAULT_CONFLICT_STRATEGY;
+	const bucket = await ensureBucket(pair.bucket);
 	const provider = new S3Provider(
-		{ ...settings.s3, bucket: pair.bucket },
+		{ ...settings.s3, bucket },
 		new TauriHttpClient(),
 	);
 	const syncState = await loadSyncState(pair.id);
@@ -183,6 +252,7 @@ async function runSync(): Promise<void> {
 
 	syncing = true;
 	const total: SyncResult = { uploaded: 0, downloaded: 0, deleted: 0, conflicts: 0, errors: 0 };
+	let lastError = "";
 	try {
 		for (const pair of settings.pairs) {
 			setStatus(`Syncing ${pair.bucket}…`);
@@ -195,12 +265,20 @@ async function runSync(): Promise<void> {
 				total.errors += r.errors;
 			} catch (e) {
 				total.errors++;
+				lastError = e instanceof Error ? e.message : String(e);
 				console.error(`sync failed for ${pair.bucket}:`, e);
 			}
 		}
 
 		settings.lastSyncTime = Date.now();
 		await saveSettings(settings);
+
+		// A single bucket-name / config error is more useful shown verbatim than
+		// as "1 errors".
+		if (total.errors === 1 && lastError && total.uploaded + total.downloaded + total.deleted === 0) {
+			setStatus(lastError);
+			return;
+		}
 
 		const parts: string[] = [];
 		if (total.uploaded) parts.push(`${total.uploaded} uploaded`);
@@ -317,24 +395,6 @@ async function init(): Promise<void> {
 
 	els.loadBuckets.addEventListener("click", () => void loadBuckets());
 
-	els.createBucket.addEventListener("click", async () => {
-		const name = els.newBucket.value.trim();
-		if (!name) return;
-		if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(name)) {
-			setStatus("Bucket name must be lowercase letters, digits, hyphens");
-			return;
-		}
-		setStatus(`Creating ${name}…`);
-		try {
-			await browsingProvider().createBucket(name);
-			els.newBucket.value = "";
-			await loadBuckets();
-			setStatus(`Created bucket ${name}`);
-		} catch (e) {
-			setStatus(`Create bucket failed: ${e instanceof Error ? e.message : String(e)}`);
-		}
-	});
-
 	els.save.addEventListener("click", async () => {
 		const previous = settings.pairs;
 		settings = readForm();
@@ -351,6 +411,9 @@ async function init(): Promise<void> {
 
 	await listen("tray-sync-now", () => void runSync());
 	await listen("menu-check-updates", () => void checkForUpdate(true));
+
+	// Preload buckets so the dropdowns are populated without a manual step.
+	if (credsFromForm()) void loadBuckets(false);
 
 	// Surface updates via the banner rather than force-installing on startup,
 	// and re-check periodically since the app lives in the tray for a long time.

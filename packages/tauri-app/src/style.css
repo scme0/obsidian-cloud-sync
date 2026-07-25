@@ -134,10 +134,33 @@ input:focus, select:focus {
 }
 .pair-main { display: flex; align-items: center; gap: 0.4rem; }
 .pair-arrow { color: var(--sub); font-size: 0.9rem; flex: 0 0 auto; }
-.pair-folder { flex: 1.4; }
-.pair-bucket { flex: 1; }
+.pair-bucket { flex: 1; min-width: 0; }
 .pair-controls { display: flex; align-items: center; gap: 0.4rem; }
 .pair-strategy { flex: 1; font-size: 0.78rem; padding: 0.3rem 0.4rem; }
+
+/* clickable folder field (styled like an input, opens the picker) */
+.pair-folder {
+	flex: 1.5;
+	min-width: 0;
+	text-align: left;
+	font-size: 0.82rem;
+	padding: 0.42rem 0.55rem;
+	border: 1px solid var(--line);
+	border-radius: 7px;
+	background: var(--card);
+	color: var(--ink);
+	overflow: hidden;
+}
+.pair-folder .pair-folder-text {
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	direction: rtl; /* keep the folder name (tail) visible when truncating */
+	text-align: left;
+}
+.pair-folder.empty { color: var(--sub); }
+.pair-folder:hover { border-color: var(--accent); }
 
 /* ---- buttons ---- */
 button {
@@ -160,7 +183,6 @@ button:hover { filter: brightness(0.97); }
 }
 .ghost.danger { color: var(--danger); }
 .add-row { align-self: flex-start; }
-.new-bucket-row { display: flex; gap: 0.4rem; align-items: center; margin-top: 0.2rem; }
 
 /* ---- actions bar ---- */
 .actions { display: flex; align-items: center; gap: 0.5rem; }
