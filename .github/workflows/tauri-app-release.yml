@@ -89,6 +89,10 @@ jobs:
           printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
           echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8" >> "$GITHUB_ENV"
 
+      - name: Read core version
+        id: core_version
+        run: echo "version=$(node -p "require('./packages/core/package.json').version")" >> "$GITHUB_OUTPUT"
+
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -106,7 +110,10 @@ jobs:
           projectPath: packages/tauri-app
           tagName: ${{ github.ref_name }}
           releaseName: "Cloud Drive Sync ${{ github.ref_name }}"
-          releaseBody: "See CHANGELOG for details."
+          releaseBody: |
+            Cloud Drive Sync ${{ github.ref_name }}
+
+            Core version: ${{ steps.core_version.outputs.version }}
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
