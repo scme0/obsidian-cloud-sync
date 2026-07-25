@@ -21,6 +21,21 @@ fn set_tray_paused(app: tauri::AppHandle, paused: bool) -> Result<(), String> {
 	Ok(())
 }
 
+// Dock icon tracks window visibility on macOS: Accessory (no dock icon) while
+// hidden, Regular (dock icon) while the settings window is shown.
+#[cfg(target_os = "macos")]
+fn set_dock_visible(app: &tauri::AppHandle, visible: bool) {
+	let policy = if visible {
+		tauri::ActivationPolicy::Regular
+	} else {
+		tauri::ActivationPolicy::Accessory
+	};
+	app.set_activation_policy(policy);
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_dock_visible(_app: &tauri::AppHandle, _visible: bool) {}
+
 fn build_app_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
 	let check_updates = MenuItem::with_id(app, "check-updates", "Check for Updates…", true, None::<&str>)?;
 	// App (first) submenu — its label is shown as the app name on macOS.
@@ -65,6 +80,7 @@ pub fn run() {
 			if event.id.as_ref() == "check-updates" {
 				let _ = app.emit("menu-check-updates", ());
 				if let Some(window) = app.get_webview_window("main") {
+					set_dock_visible(app, true);
 					let _ = window.show();
 					let _ = window.set_focus();
 				}
@@ -93,6 +109,7 @@ pub fn run() {
 					}
 					"open-settings" => {
 						if let Some(window) = app.get_webview_window("main") {
+							set_dock_visible(app, true);
 							let _ = window.show();
 							let _ = window.set_focus();
 						}
@@ -112,6 +129,7 @@ pub fn run() {
 		.on_window_event(|window, event| {
 			if let WindowEvent::CloseRequested { api, .. } = event {
 				let _ = window.hide();
+				set_dock_visible(window.app_handle(), false);
 				api.prevent_close();
 			}
 		})
