@@ -59,21 +59,18 @@ function credsFromForm(): boolean {
 
 const VALID_BUCKET = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 
-// Resolve a user-typed bucket name to an actual bucket:
-//  - case-insensitive match to an existing bucket → reuse its exact name
-//    (so typing "Audio" uses the existing "Audio", not a new "audio")
-//  - otherwise lowercase it; if that's a valid S3 name, it's a new bucket to
-//    create; if still invalid (spaces/symbols), return a clear error.
+// Resolve a user-typed bucket name to an actual bucket. Bucket dirs on the
+// server are lowercase-only, so the resolved name is always lowercase —
+// a case-insensitive match to an existing bucket still resolves to lower.
 function resolveBucket(typed: string): { bucket?: string; create?: boolean; error?: string } {
 	const t = typed.trim();
 	if (!t) return { error: "Name a bucket for each folder" };
-	const existing = bucketNames.find((b) => b.toLowerCase() === t.toLowerCase());
-	if (existing) return { bucket: existing };
-	const lower = t.toLowerCase();
+	const lower = t.toLowerCase().replace(/\s+/g, "-");
 	if (!VALID_BUCKET.test(lower)) {
 		return { error: `"${t}" isn't a valid bucket name — use letters, numbers and hyphens only` };
 	}
-	return { bucket: lower, create: true };
+	const existing = bucketNames.some((b) => b.toLowerCase() === lower);
+	return { bucket: lower, create: !existing };
 }
 
 function pairFolderText(el: HTMLButtonElement): HTMLSpanElement {
@@ -104,13 +101,12 @@ function renderPairRow(pair: SyncPair): void {
 	bucketInput.addEventListener("focus", () => {
 		if (!bucketsLoaded && credsFromForm()) void loadBuckets();
 	});
-	// On blur, tidy the typed value: reuse an existing bucket's exact casing, or
-	// lowercase a new name (leaving genuinely-invalid names for the sync error).
+	// On blur, tidy the typed value: lowercase and turn spaces into hyphens
+	// (leaving genuinely-invalid names, e.g. other symbols, for the sync error).
 	bucketInput.addEventListener("blur", () => {
 		const v = bucketInput.value.trim();
 		if (!v) return;
-		const existing = bucketNames.find((b) => b.toLowerCase() === v.toLowerCase());
-		bucketInput.value = existing ?? v.toLowerCase();
+		bucketInput.value = v.toLowerCase().replace(/\s+/g, "-");
 	});
 
 	row.querySelector<HTMLSelectElement>(".pair-strategy")!.value = pair.conflictStrategy ?? DEFAULT_CONFLICT_STRATEGY;
