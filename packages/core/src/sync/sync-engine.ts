@@ -28,6 +28,7 @@ export interface SyncResult {
 	deleted: number;
 	conflicts: number;
 	errors: number;
+	failures: SyncIssue[];
 }
 
 export interface SyncEngineSettings {
@@ -59,7 +60,7 @@ export class SyncEngine {
 	}
 
 	private emptyResult(): SyncResult {
-		return { uploaded: 0, downloaded: 0, deleted: 0, conflicts: 0, errors: 0 };
+		return { uploaded: 0, downloaded: 0, deleted: 0, conflicts: 0, errors: 0, failures: [] };
 	}
 
 	async sync(): Promise<SyncResult> {
@@ -133,7 +134,9 @@ export class SyncEngine {
 					await this.executeFolderAction(action);
 					this.countAction(action, result);
 				} catch (e) {
+					const msg = e instanceof Error ? e.message : String(e);
 					console.error(`Sync error on ${action.type} ${action.vaultPath}:`, e);
+					result.failures.push({ vaultPath: action.vaultPath, type: "error", errorMessage: msg });
 					result.errors++;
 				}
 			}
@@ -154,12 +157,14 @@ export class SyncEngine {
 					}
 					const msg = e instanceof Error ? e.message : String(e);
 					console.error(`Sync error on ${action.type} ${action.vaultPath}:`, e);
-					issues.push({
+					const issue: SyncIssue = {
 						vaultPath: action.vaultPath,
 						type: "error",
 						remoteId: "remoteId" in action ? action.remoteId : undefined,
 						errorMessage: msg,
-					});
+					};
+					issues.push(issue);
+					result.failures.push(issue);
 					result.errors++;
 				}
 			}
@@ -174,7 +179,9 @@ export class SyncEngine {
 					await this.executeFolderAction(action);
 					this.countAction(action, result);
 				} catch (e) {
+					const msg = e instanceof Error ? e.message : String(e);
 					console.error(`Sync error on ${action.type} ${action.vaultPath}:`, e);
+					result.failures.push({ vaultPath: action.vaultPath, type: "error", errorMessage: msg });
 					result.errors++;
 				}
 			}
@@ -249,7 +256,9 @@ export class SyncEngine {
 					await this.executeFolderAction(action);
 					this.countAction(action, result);
 				} catch (e) {
+					const msg = e instanceof Error ? e.message : String(e);
 					console.error(`Sync error on ${action.type} ${action.vaultPath}:`, e);
+					result.failures.push({ vaultPath: action.vaultPath, type: "error", errorMessage: msg });
 					result.errors++;
 				}
 			}
@@ -280,12 +289,14 @@ export class SyncEngine {
 				} catch (e) {
 					const msg = e instanceof Error ? e.message : String(e);
 					console.error(`Sync error on ${action.type} ${action.vaultPath}:`, e);
-					issues.push({
+					const issue: SyncIssue = {
 						vaultPath: action.vaultPath,
 						type: "error",
 						remoteId: "remoteId" in action ? action.remoteId : undefined,
 						errorMessage: msg,
-					});
+					};
+					issues.push(issue);
+					result.failures.push(issue);
 					result.errors++;
 				}
 			}
@@ -300,7 +311,9 @@ export class SyncEngine {
 					await this.executeFolderAction(action);
 					this.countAction(action, result);
 				} catch (e) {
+					const msg = e instanceof Error ? e.message : String(e);
 					console.error(`Sync error on ${action.type} ${action.vaultPath}:`, e);
+					result.failures.push({ vaultPath: action.vaultPath, type: "error", errorMessage: msg });
 					result.errors++;
 				}
 			}
@@ -636,7 +649,9 @@ export class SyncEngine {
 						break;
 				}
 			} catch (e) {
+				const msg = e instanceof Error ? e.message : String(e);
 				console.error(`Resolution error on ${res.vaultPath}:`, e);
+				result.failures.push({ vaultPath: res.vaultPath, type: "error", remoteId: res.remoteId, errorMessage: msg });
 				result.errors++;
 			}
 		}
