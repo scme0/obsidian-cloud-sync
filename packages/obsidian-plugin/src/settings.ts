@@ -179,16 +179,28 @@ export class CloudSyncSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Bucket")
 			.setDesc("S3 bucket name — for rclone this is the first-level directory served")
-			.addText((text) =>
+			.addText((text) => {
 				text
-					.setPlaceholder("Notes")
+					.setPlaceholder("notes")
 					.setValue(s3.bucket)
 					.onChange(async (value) => {
 						this.plugin.settings.s3.bucket = value;
 						await this.plugin.saveSettings();
 						updateTestBtn();
-					})
-			);
+					});
+				// On blur, tidy the typed value: lowercase and turn spaces into
+				// hyphens — bucket dirs on the server are lowercase-only. Mirrors
+				// the tauri app's bucket-field normalization.
+				text.inputEl.addEventListener("blur", async () => {
+					const tidied = text.inputEl.value.trim().toLowerCase().replace(/\s+/g, "-");
+					if (tidied === text.inputEl.value) return;
+					text.setValue(tidied);
+					this.plugin.settings.s3.bucket = tidied;
+					await this.plugin.saveSettings();
+					updateTestBtn();
+				});
+				return text;
+			});
 
 		new Setting(containerEl)
 			.setName("Access key")
