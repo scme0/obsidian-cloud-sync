@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { S3Provider, SyncStateStore, SyncEngine, type ConflictStrategy, type SyncResult } from "@cloud-drive-sync/core";
+import { S3Provider, SyncStateStore, SyncEngine, type ConflictStrategy, type SyncResult, type SyncIssue } from "@cloud-drive-sync/core";
 import { TauriHttpClient } from "./http/tauri-http-client";
 import { TauriLocalFileSystem } from "./fs/tauri-local-fs";
 import { TauriSyncUI } from "./sync/tauri-sync-ui";
@@ -47,8 +47,15 @@ let syncing = false;
 let bucketNames: string[] = [];
 let bucketsLoaded = false;
 
-function setStatus(text: string): void {
+// `detail`, when given, populates the native hover tooltip — used to list
+// per-file sync failures without needing a modal/log panel.
+function setStatus(text: string, detail?: string): void {
 	els.status.textContent = text;
+	if (detail) {
+		els.status.title = detail;
+	} else {
+		els.status.removeAttribute("title");
+	}
 }
 
 // ---------- form <-> settings ----------
@@ -247,7 +254,7 @@ async function runSync(): Promise<void> {
 	}
 
 	syncing = true;
-	const total: SyncResult = { uploaded: 0, downloaded: 0, deleted: 0, conflicts: 0, errors: 0 };
+	const total: SyncResult = { uploaded: 0, downloaded: 0, deleted: 0, conflicts: 0, errors: 0, failures: [] };
 	let lastError = "";
 	try {
 		for (const pair of settings.pairs) {
@@ -259,9 +266,11 @@ async function runSync(): Promise<void> {
 				total.deleted += r.deleted;
 				total.conflicts += r.conflicts;
 				total.errors += r.errors;
+				total.failures.push(...r.failures);
 			} catch (e) {
 				total.errors++;
 				lastError = e instanceof Error ? e.message : String(e);
+				total.failures.push({ vaultPath: pair.bucket, type: "error", errorMessage: lastError });
 				console.error(`sync failed for ${pair.bucket}:`, e);
 			}
 		}
@@ -269,10 +278,12 @@ async function runSync(): Promise<void> {
 		settings.lastSyncTime = Date.now();
 		await saveSettings(settings);
 
+		const failureDetail = failureTooltip(total.failures);
+
 		// A single bucket-name / config error is more useful shown verbatim than
 		// as "1 errors".
 		if (total.errors === 1 && lastError && total.uploaded + total.downloaded + total.deleted === 0) {
-			setStatus(lastError);
+			setStatus(lastError, failureDetail);
 			return;
 		}
 
@@ -281,10 +292,17 @@ async function runSync(): Promise<void> {
 		if (total.downloaded) parts.push(`${total.downloaded} downloaded`);
 		if (total.deleted) parts.push(`${total.deleted} deleted`);
 		if (total.errors) parts.push(`${total.errors} errors`);
-		setStatus(parts.length ? `Synced: ${parts.join(", ")}` : "Everything up to date");
+		setStatus(parts.length ? `Synced: ${parts.join(", ")}` : "Everything up to date", failureDetail);
 	} finally {
 		syncing = false;
 	}
+}
+
+// Hover detail for the status line — one "path: message" per failure so the
+// bucket/file and cause are visible without opening devtools.
+function failureTooltip(failures: SyncIssue[]): string | undefined {
+	if (failures.length === 0) return undefined;
+	return failures.map((f) => `${f.vaultPath}: ${f.errorMessage ?? "unknown error"}`).join("\n");
 }
 
 async function restartWatchers(): Promise<void> {
