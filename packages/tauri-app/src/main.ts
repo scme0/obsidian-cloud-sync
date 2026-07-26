@@ -29,6 +29,7 @@ const els = {
 	syncNow: document.querySelector<HTMLButtonElement>("#syncNow")!,
 	pauseToggle: document.querySelector<HTMLButtonElement>("#pauseToggle")!,
 	status: document.querySelector<HTMLSpanElement>("#status")!,
+	errorDetail: document.querySelector<HTMLUListElement>("#errorDetail")!,
 	version: document.querySelector<HTMLSpanElement>("#version")!,
 	updateBanner: document.querySelector<HTMLDivElement>("#updateBanner")!,
 	updateText: document.querySelector<HTMLSpanElement>("#updateText")!,
@@ -47,16 +48,25 @@ let syncing = false;
 let bucketNames: string[] = [];
 let bucketsLoaded = false;
 
-// `detail`, when given, populates the native hover tooltip — used to list
-// per-file sync failures without needing a modal/log panel.
-function setStatus(text: string, detail?: string): void {
+// `failures`, when given, makes the status text underlined + clickable;
+// clicking toggles a list of "path: message" rows below the actions bar.
+function setStatus(text: string, failures: SyncIssue[] = []): void {
 	els.status.textContent = text;
-	if (detail) {
-		els.status.title = detail;
-	} else {
-		els.status.removeAttribute("title");
-	}
+	els.status.classList.toggle("has-detail", failures.length > 0);
+	els.errorDetail.replaceChildren(
+		...failures.map((f) => {
+			const li = document.createElement("li");
+			li.textContent = `${f.vaultPath}: ${f.errorMessage ?? "unknown error"}`;
+			return li;
+		}),
+	);
+	if (failures.length === 0) els.errorDetail.hidden = true;
 }
+
+els.status.addEventListener("click", () => {
+	if (!els.status.classList.contains("has-detail")) return;
+	els.errorDetail.hidden = !els.errorDetail.hidden;
+});
 
 // ---------- form <-> settings ----------
 
@@ -278,12 +288,10 @@ async function runSync(): Promise<void> {
 		settings.lastSyncTime = Date.now();
 		await saveSettings(settings);
 
-		const failureDetail = failureTooltip(total.failures);
-
 		// A single bucket-name / config error is more useful shown verbatim than
 		// as "1 errors".
 		if (total.errors === 1 && lastError && total.uploaded + total.downloaded + total.deleted === 0) {
-			setStatus(lastError, failureDetail);
+			setStatus(lastError, total.failures);
 			return;
 		}
 
@@ -292,17 +300,10 @@ async function runSync(): Promise<void> {
 		if (total.downloaded) parts.push(`${total.downloaded} downloaded`);
 		if (total.deleted) parts.push(`${total.deleted} deleted`);
 		if (total.errors) parts.push(`${total.errors} errors`);
-		setStatus(parts.length ? `Synced: ${parts.join(", ")}` : "Everything up to date", failureDetail);
+		setStatus(parts.length ? `Synced: ${parts.join(", ")}` : "Everything up to date", total.failures);
 	} finally {
 		syncing = false;
 	}
-}
-
-// Hover detail for the status line — one "path: message" per failure so the
-// bucket/file and cause are visible without opening devtools.
-function failureTooltip(failures: SyncIssue[]): string | undefined {
-	if (failures.length === 0) return undefined;
-	return failures.map((f) => `${f.vaultPath}: ${f.errorMessage ?? "unknown error"}`).join("\n");
 }
 
 async function restartWatchers(): Promise<void> {
